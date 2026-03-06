@@ -1,8 +1,12 @@
 package loader
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/dcm-io/dcm/pkg/types"
 	"gopkg.in/yaml.v3"
@@ -27,21 +31,94 @@ func LoadApplication(path string) (*types.Application, error) {
 	return &app, nil
 }
 
-// LoadPolicy reads and parses a policy YAML file.
-func LoadPolicy(path string) (*types.Policy, error) {
+// LoadPolicy reads and parses a single policy YAML file.
+// Supports multi-document YAML (multiple policies separated by ---).
+func LoadPolicy(path string) ([]types.Policy, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading policy file %s: %w", path, err)
 	}
 
-	var policy types.Policy
-	if err := yaml.Unmarshal(data, &policy); err != nil {
-		return nil, fmt.Errorf("parsing policy file %s: %w", path, err)
+	return parsePolicies(data, path)
+}
+
+// LoadPolicies loads policies from one or more paths. Each path can be:
+//   - A single YAML file
+//   - A directory (all .yaml/.yml files are loaded recursively)
+func LoadPolicies(paths []string) ([]types.Policy, error) {
+	var all []types.Policy
+
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, fmt.Errorf("stat %s: %w", path, err)
+		}
+
+		if info.IsDir() {
+			dirPolicies, err := loadPoliciesFromDir(path)
+			if err != nil {
+				return nil, err
+			}
+			all = append(all, dirPolicies...)
+		} else {
+			filePolicies, err := LoadPolicy(path)
+			if err != nil {
+				return nil, err
+			}
+			all = append(all, filePolicies...)
+		}
 	}
 
-	if policy.Kind != "Policy" {
-		return nil, fmt.Errorf("expected kind Policy, got %q", policy.Kind)
+	return all, nil
+}
+
+func loadPoliciesFromDir(dir string) ([]types.Policy, error) {
+	var all []types.Policy
+
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext != ".yaml" && ext != ".yml" {
+			return nil
+		}
+
+		policies, err := LoadPolicy(path)
+		if err != nil {
+			return err
+		}
+		all = append(all, policies...)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walking policy directory %s: %w", dir, err)
 	}
 
-	return &policy, nil
+	return all, nil
+}
+
+func parsePolicies(data []byte, source string) ([]types.Policy, error) {
+	var policies []types.Policy
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+
+	for {
+		var policy types.Policy
+		err := decoder.Decode(&policy)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("parsing policy in %s: %w", source, err)
+		}
+		if policy.Kind != "Policy" {
+			return nil, fmt.Errorf("expected kind Policy in %s, got %q", source, policy.Kind)
+		}
+		policies = append(policies, policy)
+	}
+
+	return policies, nil
 }

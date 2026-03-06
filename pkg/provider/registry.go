@@ -49,3 +49,12 @@ func (r *Registry) List() []string {
 	}
 	return names
 }
+
+// ListProviders returns all registered providers.
+func (r *Registry) ListProviders() []types.Provider {
+	providers := make([]types.Provider, 0, len(r.providers))
+	for _, p := range r.providers {
+		providers = append(providers, p)
+	}
+	return providers
+}

@@ -1,0 +1,26 @@
+apiVersion: dcm.io/v1
+kind: Policy
+metadata:
+  name: cel-based-rules
+spec:
+  rules:
+    - name: backend-to-kubernetes
+      priority: 80
+      match:
+        expression: 'component.type == "container" && component.name == "backend"'
+      providers:
+        preferred: [kubernetes]
+
+    - name: production-no-mock
+      priority: 200
+      match:
+        expression: 'app.labels.env == "production"'
+      providers:
+        forbidden: [mock]
+
+    - name: stateful-services-prefer-aws
+      priority: 70
+      match:
+        expression: 'component.type == "postgres" || component.type == "redis"'
+      providers:
+        preferred: [aws]

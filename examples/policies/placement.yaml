@@ -4,7 +4,9 @@ metadata:
   name: production-placement
 spec:
   rules:
-    - match:
+    - name: eu-data-residency
+      priority: 100
+      match:
         labels:
           env: production
           data-residency: eu
@@ -12,17 +14,21 @@ spec:
         preferred: [aws-eu-west-1, gcp-europe-west1]
         forbidden: [aws-us-east-1]
 
-    - match:
+    - name: critical-postgres-on-aws
+      priority: 90
+      match:
         type: postgres
         labels:
           tier: critical
       providers:
-        preferred: [aws]
+        preferred: [mock]
       properties:
         multiAz: true
         backupRetention: 30d
 
-    - match:
+    - name: cost-optimized-containers
+      priority: 50
+      match:
         type: container
         labels:
           cost: optimize

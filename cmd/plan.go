@@ -6,6 +6,7 @@ import (
 
 	"github.com/dcm-io/dcm/pkg/engine"
 	"github.com/dcm-io/dcm/pkg/loader"
+	"github.com/dcm-io/dcm/pkg/policy"
 	"github.com/dcm-io/dcm/pkg/provider"
 	k8sprovider "github.com/dcm-io/dcm/pkg/provider/kubernetes"
 	"github.com/dcm-io/dcm/pkg/provider/mock"
@@ -31,6 +32,11 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	}
 
 	registry := buildRegistry()
+	evaluator, err := buildEvaluator()
+	if err != nil {
+		return err
+	}
+
 	statePath := resolveStatePath(app.Metadata.Name)
 	store := state.NewStore(statePath)
 
@@ -39,7 +45,7 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("loading state: %w", err)
 	}
 
-	planner := engine.NewPlanner(registry)
+	planner := engine.NewPlanner(registry, evaluator)
 	plan, err := planner.CreatePlan(app, currentState)
 	if err != nil {
 		return fmt.Errorf("creating plan: %w", err)
@@ -69,6 +75,9 @@ func printPlan(plan *engine.Plan) {
 			fmt.Printf("    %s (no changes)\n", step.Component)
 			unchanged++
 		}
+		if len(step.MatchedRules) > 0 {
+			fmt.Printf("      policies: %v\n", step.MatchedRules)
+		}
 	}
 
 	fmt.Println("─────────────────────────────────")
@@ -88,6 +97,29 @@ func buildRegistry() *provider.Registry {
 	}
 
 	return registry
+}
+
+func buildEvaluator() (*policy.Evaluator, error) {
+	if len(policyPaths) == 0 {
+		return nil, nil
+	}
+
+	policies, err := loader.LoadPolicies(policyPaths)
+	if err != nil {
+		return nil, fmt.Errorf("loading policies: %w", err)
+	}
+
+	if len(policies) == 0 {
+		return nil, nil
+	}
+
+	evaluator, err := policy.NewEvaluator(policies)
+	if err != nil {
+		return nil, fmt.Errorf("creating policy evaluator: %w", err)
+	}
+
+	fmt.Printf("Loaded %d policy(ies)\n", len(policies))
+	return evaluator, nil
 }
 
 func resolveStatePath(appName string) string {

@@ -26,6 +26,11 @@ func runApply(cmd *cobra.Command, args []string) error {
 	}
 
 	registry := buildRegistry()
+	evaluator, err := buildEvaluator()
+	if err != nil {
+		return err
+	}
+
 	statePath := resolveStatePath(app.Metadata.Name)
 	store := state.NewStore(statePath)
 
@@ -34,7 +39,7 @@ func runApply(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("loading state: %w", err)
 	}
 
-	planner := engine.NewPlanner(registry)
+	planner := engine.NewPlanner(registry, evaluator)
 	plan, err := planner.CreatePlan(app, currentState)
 	if err != nil {
 		return fmt.Errorf("creating plan: %w", err)

@@ -5,6 +5,7 @@ import (
 
 	"github.com/dcm-io/dcm/pkg/engine"
 	"github.com/dcm-io/dcm/pkg/loader"
+	"github.com/dcm-io/dcm/pkg/scheduler"
 	"github.com/dcm-io/dcm/pkg/state"
 	"github.com/spf13/cobra"
 )
@@ -25,7 +26,6 @@ func runApply(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	registry := buildRegistry()
 	evaluator, err := buildEvaluator()
 	if err != nil {
 		return err
@@ -39,7 +39,17 @@ func runApply(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("loading state: %w", err)
 	}
 
-	planner := engine.NewPlanner(registry, evaluator)
+	schedReg, err := buildSchedulerRegistry()
+	if err != nil {
+		return err
+	}
+
+	sched, err := scheduler.NewScheduler(schedReg, evaluator)
+	if err != nil {
+		return fmt.Errorf("creating scheduler: %w", err)
+	}
+
+	planner := engine.NewPlannerWithScheduler(sched)
 	plan, err := planner.CreatePlan(app, currentState)
 	if err != nil {
 		return fmt.Errorf("creating plan: %w", err)
@@ -48,7 +58,7 @@ func runApply(cmd *cobra.Command, args []string) error {
 	printPlan(plan)
 
 	fmt.Println("Applying changes...")
-	executor := engine.NewExecutor(registry)
+	executor := engine.NewExecutor(schedReg)
 	if err := executor.Execute(plan, currentState); err != nil {
 		return fmt.Errorf("applying: %w", err)
 	}

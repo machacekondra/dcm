@@ -1,5 +1,10 @@
 const BASE = '/api/v1';
 
+async function get<T>(path: string) { return request<T>(path); }
+function post<T>(path: string, body: unknown) { return request<T>(path, { method: 'POST', body: JSON.stringify(body) }); }
+function put<T>(path: string, body: unknown) { return request<T>(path, { method: 'PUT', body: JSON.stringify(body) }); }
+function del(path: string) { return request<void>(path, { method: 'DELETE' }); }
+
 async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -77,6 +82,7 @@ export interface PlanStep {
     resource: string;
     type: string;
     provider: string;
+    environment?: string;
     before?: Record<string, unknown>;
     after?: Record<string, unknown>;
   };
@@ -105,6 +111,18 @@ export interface HistoryRecord {
   action: string;
   details?: unknown;
   createdAt: string;
+}
+
+export interface EnvironmentRecord {
+  name: string;
+  provider: string;
+  labels?: Record<string, string>;
+  config?: Record<string, any>;
+  resources?: { cpu: number; memory: number; pods: number } | null;
+  cost?: { tier: string; hourlyRate: number } | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ProviderInfo {
@@ -165,6 +183,17 @@ export const deployments = {
   destroy: (id: string) => request<DeploymentRecord>(`/deployments/${id}`, { method: 'DELETE' }),
   plan: (id: string) => request<Plan>(`/deployments/${id}/plan`, { method: 'POST' }),
   history: (id: string) => request<HistoryRecord[]>(`/deployments/${id}/history`),
+};
+
+// --- Environments ---
+
+export const environments = {
+  list: () => get<EnvironmentRecord[]>('/environments'),
+  get: (name: string) => get<EnvironmentRecord>(`/environments/${name}`),
+  create: (data: { name: string; provider: string; labels?: Record<string, string>; config?: Record<string, any>; resources?: { cpu: number; memory: number; pods: number }; cost?: { tier: string; hourlyRate: number } }) =>
+    post<EnvironmentRecord>('/environments', data),
+  update: (name: string, data: any) => put<EnvironmentRecord>(`/environments/${name}`, data),
+  delete: (name: string) => del(`/environments/${name}`),
 };
 
 // --- Providers ---

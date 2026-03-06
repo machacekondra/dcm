@@ -20,11 +20,32 @@ type PolicyRule struct {
 	// evaluated first and take precedence. Default is 0.
 	Priority int `yaml:"priority,omitempty" json:"priority,omitempty"`
 
-	Match     PolicyMatch    `yaml:"match" json:"match"`
-	Providers ProviderPolicy `yaml:"providers" json:"providers"`
+	Match        PolicyMatch       `yaml:"match" json:"match"`
+	Providers    ProviderPolicy    `yaml:"providers,omitempty" json:"providers,omitempty"`
+	Environments EnvironmentPolicy `yaml:"environments,omitempty" json:"environments,omitempty"`
 
 	// Properties are merged into the component properties when this rule matches.
 	Properties map[string]any `yaml:"properties,omitempty" json:"properties,omitempty"`
+}
+
+// EnvironmentPolicy controls environment-level scheduling.
+type EnvironmentPolicy struct {
+	// Preferred lists environments in priority order.
+	Preferred []string `yaml:"preferred,omitempty" json:"preferred,omitempty"`
+
+	// Required specifies an environment that must be used.
+	Required string `yaml:"required,omitempty" json:"required,omitempty"`
+
+	// Forbidden lists environments that must not be used.
+	Forbidden []string `yaml:"forbidden,omitempty" json:"forbidden,omitempty"`
+
+	// MatchExpression is a CEL expression evaluated against each candidate
+	// environment. Only environments where this evaluates to true are considered.
+	MatchExpression string `yaml:"matchExpression,omitempty" json:"matchExpression,omitempty"`
+
+	// Strategy selects the scheduling strategy among remaining candidates:
+	// "first", "cheapest", "least-loaded", "round-robin", "bin-pack".
+	Strategy string `yaml:"strategy,omitempty" json:"strategy,omitempty"`
 }
 
 type PolicyMatch struct {

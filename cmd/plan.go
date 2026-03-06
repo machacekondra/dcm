@@ -10,6 +10,7 @@ import (
 	"github.com/dcm-io/dcm/pkg/provider"
 	k8sprovider "github.com/dcm-io/dcm/pkg/provider/kubernetes"
 	"github.com/dcm-io/dcm/pkg/provider/mock"
+	"github.com/dcm-io/dcm/pkg/scheduler"
 	"github.com/dcm-io/dcm/pkg/state"
 	"github.com/dcm-io/dcm/pkg/types"
 	"github.com/spf13/cobra"
@@ -31,7 +32,6 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	registry := buildRegistry()
 	evaluator, err := buildEvaluator()
 	if err != nil {
 		return err
@@ -45,7 +45,17 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("loading state: %w", err)
 	}
 
-	planner := engine.NewPlanner(registry, evaluator)
+	schedReg, err := buildSchedulerRegistry()
+	if err != nil {
+		return err
+	}
+
+	sched, err := scheduler.NewScheduler(schedReg, evaluator)
+	if err != nil {
+		return fmt.Errorf("creating scheduler: %w", err)
+	}
+
+	planner := engine.NewPlannerWithScheduler(sched)
 	plan, err := planner.CreatePlan(app, currentState)
 	if err != nil {
 		return fmt.Errorf("creating plan: %w", err)
@@ -63,13 +73,13 @@ func printPlan(plan *engine.Plan) {
 	for _, step := range plan.Steps {
 		switch step.Diff.Action {
 		case types.DiffActionCreate:
-			fmt.Printf("  + %s (%s via %s)\n", step.Component, step.Diff.Type, step.Diff.Provider)
+			fmt.Printf("  + %s (%s via %s%s)\n", step.Component, step.Diff.Type, step.Diff.Provider, envSuffix(step.Environment))
 			creates++
 		case types.DiffActionUpdate:
-			fmt.Printf("  ~ %s (%s via %s)\n", step.Component, step.Diff.Type, step.Diff.Provider)
+			fmt.Printf("  ~ %s (%s via %s%s)\n", step.Component, step.Diff.Type, step.Diff.Provider, envSuffix(step.Environment))
 			updates++
 		case types.DiffActionDelete:
-			fmt.Printf("  - %s (%s via %s)\n", step.Component, step.Diff.Type, step.Diff.Provider)
+			fmt.Printf("  - %s (%s via %s%s)\n", step.Component, step.Diff.Type, step.Diff.Provider, envSuffix(step.Environment))
 			deletes++
 		case types.DiffActionNone:
 			fmt.Printf("    %s (no changes)\n", step.Component)
@@ -97,6 +107,63 @@ func buildRegistry() *provider.Registry {
 	}
 
 	return registry
+}
+
+func buildFactories() *provider.FactoryRegistry {
+	factories := provider.NewFactoryRegistry()
+
+	// Mock provider factory.
+	factories.Register("mock", func(config map[string]any) (types.Provider, error) {
+		return mock.New(), nil
+	})
+
+	// Kubernetes provider factory.
+	factories.Register("kubernetes", func(config map[string]any) (types.Provider, error) {
+		kubeconfig, _ := config["kubeconfig"].(string)
+		context, _ := config["context"].(string)
+		namespace, _ := config["namespace"].(string)
+		return k8sprovider.New(k8sprovider.Config{
+			Kubeconfig: kubeconfig,
+			Context:    context,
+			Namespace:  namespace,
+		})
+	})
+
+	return factories
+}
+
+func buildSchedulerRegistry() (*scheduler.Registry, error) {
+	factories := buildFactories()
+	reg := scheduler.NewRegistry(factories)
+
+	if len(envPaths) > 0 {
+		envs, err := loader.LoadEnvironments(envPaths)
+		if err != nil {
+			return nil, fmt.Errorf("loading environments: %w", err)
+		}
+		for _, env := range envs {
+			if err := reg.RegisterEnvironment(env); err != nil {
+				return nil, fmt.Errorf("registering environment %q: %w", env.Metadata.Name, err)
+			}
+		}
+		fmt.Printf("Loaded %d environment(s)\n", len(envs))
+	} else {
+		// Backward compat: register providers directly as default environments.
+		reg.RegisterProvider(mock.New())
+		k8s, err := k8sprovider.New(k8sprovider.Config{})
+		if err == nil {
+			reg.RegisterProvider(k8s)
+		}
+	}
+
+	return reg, nil
+}
+
+func envSuffix(env string) string {
+	if env == "" {
+		return ""
+	}
+	return " @ " + env
 }
 
 func buildEvaluator() (*policy.Evaluator, error) {

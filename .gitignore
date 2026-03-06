@@ -29,3 +29,9 @@ coverage.html
 
 # Vendor (use go modules)
 /vendor/
+
+# DB
+dcm.db*
+
+# Local test
+.local

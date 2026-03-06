@@ -1,0 +1,72 @@
+apiVersion: dcm.io/v1
+kind: Environment
+metadata:
+  name: k8s-prod-eu
+  labels:
+    region: eu-west-1
+    tier: production
+spec:
+  provider: kubernetes
+  config:
+    kubeconfig: ~/.kube/config
+    context: prod-eu
+    namespace: apps
+  resources:
+    cpu: 16000
+    memory: 65536
+    pods: 500
+  cost:
+    tier: standard
+    hourlyRate: 0.05
+---
+apiVersion: dcm.io/v1
+kind: Environment
+metadata:
+  name: k8s-prod-us
+  labels:
+    region: us-east-1
+    tier: production
+spec:
+  provider: kubernetes
+  config:
+    kubeconfig: ~/.kube/config
+    context: prod-us
+    namespace: apps
+  resources:
+    cpu: 32000
+    memory: 131072
+    pods: 1000
+  cost:
+    tier: standard
+    hourlyRate: 0.04
+---
+apiVersion: dcm.io/v1
+kind: Environment
+metadata:
+  name: k8s-dev
+  labels:
+    region: eu-west-1
+    tier: development
+spec:
+  provider: kubernetes
+  config:
+    kubeconfig: ~/.kube/config
+    context: dev
+    namespace: dev
+  resources:
+    cpu: 4000
+    memory: 16384
+    pods: 100
+  cost:
+    tier: spot
+    hourlyRate: 0.01
+---
+apiVersion: dcm.io/v1
+kind: Environment
+metadata:
+  name: mock-local
+  labels:
+    tier: development
+spec:
+  provider: mock
+  config: {}

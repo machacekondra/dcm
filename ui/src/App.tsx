@@ -6,6 +6,7 @@ import Policies from './pages/Policies';
 import PolicyDetail from './pages/PolicyDetail';
 import Deployments from './pages/Deployments';
 import DeploymentDetail from './pages/DeploymentDetail';
+import Environments from './pages/Environments';
 import Providers from './pages/Providers';
 
 export default function App() {
@@ -20,6 +21,7 @@ export default function App() {
           <Route path="/policies/:name" element={<PolicyDetail />} />
           <Route path="/deployments" element={<Deployments />} />
           <Route path="/deployments/:id" element={<DeploymentDetail />} />
+          <Route path="/environments" element={<Environments />} />
           <Route path="/providers" element={<Providers />} />
         </Route>
       </Routes>

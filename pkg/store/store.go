@@ -75,8 +75,21 @@ func (s *Store) migrate() error {
 			created_at    TEXT NOT NULL
 		);
 
+		CREATE TABLE IF NOT EXISTS environments (
+			name       TEXT PRIMARY KEY,
+			provider   TEXT NOT NULL,
+			labels     TEXT NOT NULL DEFAULT '{}',
+			config     TEXT NOT NULL DEFAULT '{}',
+			resources  TEXT,
+			cost       TEXT,
+			status     TEXT NOT NULL DEFAULT 'active',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+
 		CREATE INDEX IF NOT EXISTS idx_deployments_app ON deployments(application_name);
 		CREATE INDEX IF NOT EXISTS idx_history_deployment ON deployment_history(deployment_id);
+		CREATE INDEX IF NOT EXISTS idx_environments_provider ON environments(provider);
 	`)
 	return err
 }
@@ -394,6 +407,120 @@ func (s *Store) GetHistory(deploymentID string) ([]HistoryRecord, error) {
 	return history, rows.Err()
 }
 
+// --- Environment CRUD ---
+
+type EnvironmentRecord struct {
+	Name      string            `json:"name"`
+	Provider  string            `json:"provider"`
+	Labels    map[string]string `json:"labels,omitempty"`
+	Config    map[string]any    `json:"config,omitempty"`
+	Resources json.RawMessage   `json:"resources,omitempty"`
+	Cost      json.RawMessage   `json:"cost,omitempty"`
+	Status    string            `json:"status"`
+	CreatedAt time.Time         `json:"createdAt"`
+	UpdatedAt time.Time         `json:"updatedAt"`
+}
+
+func (s *Store) CreateEnvironment(env *EnvironmentRecord) error {
+	labels, _ := json.Marshal(env.Labels)
+	config, _ := json.Marshal(env.Config)
+	now := time.Now().UTC()
+	if env.Status == "" {
+		env.Status = "active"
+	}
+	var resources, cost *string
+	if env.Resources != nil {
+		r := string(env.Resources)
+		resources = &r
+	}
+	if env.Cost != nil {
+		c := string(env.Cost)
+		cost = &c
+	}
+	_, err := s.db.Exec(
+		`INSERT INTO environments (name, provider, labels, config, resources, cost, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		env.Name, env.Provider, string(labels), string(config), resources, cost, env.Status,
+		now.Format(time.RFC3339), now.Format(time.RFC3339),
+	)
+	if err != nil {
+		return fmt.Errorf("inserting environment: %w", err)
+	}
+	env.CreatedAt = now
+	env.UpdatedAt = now
+	return nil
+}
+
+func (s *Store) GetEnvironment(name string) (*EnvironmentRecord, error) {
+	row := s.db.QueryRow(
+		`SELECT name, provider, labels, config, resources, cost, status, created_at, updated_at
+		 FROM environments WHERE name = ?`, name,
+	)
+	return scanEnvironment(row)
+}
+
+func (s *Store) ListEnvironments() ([]EnvironmentRecord, error) {
+	rows, err := s.db.Query(
+		`SELECT name, provider, labels, config, resources, cost, status, created_at, updated_at
+		 FROM environments ORDER BY name`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var envs []EnvironmentRecord
+	for rows.Next() {
+		env, err := scanEnvironment(rows)
+		if err != nil {
+			return nil, err
+		}
+		envs = append(envs, *env)
+	}
+	return envs, rows.Err()
+}
+
+func (s *Store) UpdateEnvironment(env *EnvironmentRecord) error {
+	labels, _ := json.Marshal(env.Labels)
+	config, _ := json.Marshal(env.Config)
+	now := time.Now().UTC()
+	var resources, cost *string
+	if env.Resources != nil {
+		r := string(env.Resources)
+		resources = &r
+	}
+	if env.Cost != nil {
+		c := string(env.Cost)
+		cost = &c
+	}
+	res, err := s.db.Exec(
+		`UPDATE environments SET provider = ?, labels = ?, config = ?, resources = ?, cost = ?, status = ?, updated_at = ?
+		 WHERE name = ?`,
+		env.Provider, string(labels), string(config), resources, cost, env.Status, now.Format(time.RFC3339), env.Name,
+	)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	env.UpdatedAt = now
+	return nil
+}
+
+func (s *Store) DeleteEnvironment(name string) error {
+	res, err := s.db.Exec(`DELETE FROM environments WHERE name = ?`, name)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // --- Errors ---
 
 var ErrNotFound = fmt.Errorf("not found")
@@ -478,4 +605,28 @@ func scanDeployment(row scanner) (*DeploymentRecord, error) {
 
 func scanDeploymentRow(rows *sql.Rows) (*DeploymentRecord, error) {
 	return scanDeployment(rows)
+}
+
+func scanEnvironment(row scanner) (*EnvironmentRecord, error) {
+	var env EnvironmentRecord
+	var labels, config, createdAt, updatedAt string
+	var resources, cost sql.NullString
+	err := row.Scan(&env.Name, &env.Provider, &labels, &config, &resources, &cost, &env.Status, &createdAt, &updatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	json.Unmarshal([]byte(labels), &env.Labels)
+	json.Unmarshal([]byte(config), &env.Config)
+	if resources.Valid {
+		env.Resources = json.RawMessage(resources.String)
+	}
+	if cost.Valid {
+		env.Cost = json.RawMessage(cost.String)
+	}
+	env.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	env.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	return &env, nil
 }

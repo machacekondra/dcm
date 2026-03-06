@@ -14,12 +14,13 @@ const (
 
 // Resource represents a single managed resource and its current state.
 type Resource struct {
-	Name       string                 `json:"name"`
-	Type       ResourceType           `json:"type"`
-	Provider   string                 `json:"provider"`
-	Properties map[string]interface{} `json:"properties,omitempty"`
-	Outputs    map[string]interface{} `json:"outputs,omitempty"`
-	Status     ResourceStatus         `json:"status"`
+	Name        string                 `json:"name"`
+	Type        ResourceType           `json:"type"`
+	Provider    string                 `json:"provider"`
+	Environment string                 `json:"environment,omitempty"`
+	Properties  map[string]interface{} `json:"properties,omitempty"`
+	Outputs     map[string]interface{} `json:"outputs,omitempty"`
+	Status      ResourceStatus         `json:"status"`
 }
 
 type ResourceStatus string
@@ -46,12 +47,13 @@ const (
 
 // Diff describes the difference between desired and current state.
 type Diff struct {
-	Action     DiffAction             `json:"action"`
-	Resource   string                 `json:"resource"`
-	Type       ResourceType           `json:"type"`
-	Provider   string                 `json:"provider"`
-	Before     map[string]interface{} `json:"before,omitempty"`
-	After      map[string]interface{} `json:"after,omitempty"`
+	Action      DiffAction             `json:"action"`
+	Resource    string                 `json:"resource"`
+	Type        ResourceType           `json:"type"`
+	Provider    string                 `json:"provider"`
+	Environment string                 `json:"environment,omitempty"`
+	Before      map[string]interface{} `json:"before,omitempty"`
+	After       map[string]interface{} `json:"after,omitempty"`
 }
 
 // Provider is the interface that all infrastructure providers must implement.

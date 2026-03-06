@@ -149,6 +149,7 @@ export default function DeploymentDetail() {
                       <Th>Action</Th>
                       <Th>Type</Th>
                       <Th>Provider</Th>
+                      <Th>Environment</Th>
                       <Th>Matched Rules</Th>
                     </Tr>
                   </Thead>
@@ -166,6 +167,7 @@ export default function DeploymentDetail() {
                         </Td>
                         <Td dataLabel="Type">{step.diff.type}</Td>
                         <Td dataLabel="Provider">{step.diff.provider}</Td>
+                        <Td dataLabel="Environment">{step.diff.environment || '—'}</Td>
                         <Td dataLabel="Matched Rules">
                           {step.matchedRules?.length ? (
                             <LabelGroup>{step.matchedRules.map(r => <Label key={r} isCompact color="cyan">{r}</Label>)}</LabelGroup>

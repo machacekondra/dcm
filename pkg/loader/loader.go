@@ -72,6 +72,47 @@ func LoadPolicies(paths []string) ([]types.Policy, error) {
 	return all, nil
 }
 
+// LoadEnvironment reads and parses a single environment YAML file.
+// Supports multi-document YAML (multiple environments separated by ---).
+func LoadEnvironment(path string) ([]types.Environment, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading environment file %s: %w", path, err)
+	}
+
+	return parseEnvironments(data, path)
+}
+
+// LoadEnvironments loads environments from one or more paths. Each path can be:
+//   - A single YAML file
+//   - A directory (all .yaml/.yml files are loaded recursively)
+func LoadEnvironments(paths []string) ([]types.Environment, error) {
+	var all []types.Environment
+
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, fmt.Errorf("stat %s: %w", path, err)
+		}
+
+		if info.IsDir() {
+			dirEnvs, err := loadEnvironmentsFromDir(path)
+			if err != nil {
+				return nil, err
+			}
+			all = append(all, dirEnvs...)
+		} else {
+			fileEnvs, err := LoadEnvironment(path)
+			if err != nil {
+				return nil, err
+			}
+			all = append(all, fileEnvs...)
+		}
+	}
+
+	return all, nil
+}
+
 func loadPoliciesFromDir(dir string) ([]types.Policy, error) {
 	var all []types.Policy
 
@@ -121,4 +162,55 @@ func parsePolicies(data []byte, source string) ([]types.Policy, error) {
 	}
 
 	return policies, nil
+}
+
+func loadEnvironmentsFromDir(dir string) ([]types.Environment, error) {
+	var all []types.Environment
+
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext != ".yaml" && ext != ".yml" {
+			return nil
+		}
+
+		envs, err := LoadEnvironment(path)
+		if err != nil {
+			return err
+		}
+		all = append(all, envs...)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walking environment directory %s: %w", dir, err)
+	}
+
+	return all, nil
+}
+
+func parseEnvironments(data []byte, source string) ([]types.Environment, error) {
+	var envs []types.Environment
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+
+	for {
+		var env types.Environment
+		err := decoder.Decode(&env)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("parsing environment in %s: %w", source, err)
+		}
+		if env.Kind != "Environment" {
+			continue // skip non-Environment documents in multi-doc YAML
+		}
+		envs = append(envs, env)
+	}
+
+	return envs, nil
 }

@@ -11,6 +11,7 @@ var (
 	appFile     string
 	stateFile   string
 	policyPaths []string
+	envPaths    []string
 )
 
 var rootCmd = &cobra.Command{
@@ -30,4 +31,5 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&appFile, "file", "f", "app.yaml", "Path to the application spec file")
 	rootCmd.PersistentFlags().StringVar(&stateFile, "state", "", "Path to the state file (defaults to <app-name>.dcm.state)")
 	rootCmd.PersistentFlags().StringSliceVarP(&policyPaths, "policy", "p", nil, "Paths to policy files or directories (can be repeated)")
+	rootCmd.PersistentFlags().StringSliceVarP(&envPaths, "environment", "e", nil, "Paths to environment files or directories (can be repeated)")
 }

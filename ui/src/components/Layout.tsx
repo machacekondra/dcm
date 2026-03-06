@@ -17,6 +17,7 @@ const navItems = [
   { to: '/applications', label: 'Applications' },
   { to: '/policies', label: 'Policies' },
   { to: '/deployments', label: 'Deployments' },
+  { to: '/environments', label: 'Environments' },
   { to: '/providers', label: 'Providers' },
 ];
 

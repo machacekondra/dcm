@@ -69,6 +69,18 @@ type Result struct {
 
 	// Properties are merged from all matching rules (higher-priority rules override).
 	Properties map[string]any
+
+	// Environments contains environment-level scheduling constraints.
+	Environments EnvironmentResult
+}
+
+// EnvironmentResult holds accumulated environment-level constraints from policies.
+type EnvironmentResult struct {
+	Required        string
+	Preferred       []string
+	Forbidden       []string
+	MatchExpression string
+	Strategy        string
 }
 
 // IsProviderAllowed checks whether a given provider name is permitted by this result.
@@ -148,6 +160,20 @@ func (e *Evaluator) Evaluate(component *types.Component, app *types.Application)
 			result.Strategy = ir.rule.Providers.Strategy
 		}
 
+		// Environment-level constraints.
+		env := ir.rule.Environments
+		if env.Required != "" && result.Environments.Required == "" {
+			result.Environments.Required = env.Required
+		}
+		result.Environments.Preferred = append(result.Environments.Preferred, env.Preferred...)
+		result.Environments.Forbidden = append(result.Environments.Forbidden, env.Forbidden...)
+		if env.MatchExpression != "" && result.Environments.MatchExpression == "" {
+			result.Environments.MatchExpression = env.MatchExpression
+		}
+		if env.Strategy != "" && result.Environments.Strategy == "" {
+			result.Environments.Strategy = env.Strategy
+		}
+
 		// Properties: higher-priority rules set first, lower-priority rules fill gaps.
 		for k, v := range ir.rule.Properties {
 			if _, exists := result.Properties[k]; !exists {
@@ -159,6 +185,8 @@ func (e *Evaluator) Evaluate(component *types.Component, app *types.Application)
 	// Deduplicate lists while preserving order.
 	result.Preferred = dedup(result.Preferred)
 	result.Forbidden = dedup(result.Forbidden)
+	result.Environments.Preferred = dedup(result.Environments.Preferred)
+	result.Environments.Forbidden = dedup(result.Environments.Forbidden)
 
 	// Validate: required provider must not be forbidden.
 	if result.Required != "" && slices.Contains(result.Forbidden, result.Required) {
@@ -166,9 +194,20 @@ func (e *Evaluator) Evaluate(component *types.Component, app *types.Application)
 			result.Required, component.Name)
 	}
 
+	// Validate: required environment must not be forbidden.
+	if result.Environments.Required != "" && slices.Contains(result.Environments.Forbidden, result.Environments.Required) {
+		return nil, fmt.Errorf("conflict: environment %q is both required and forbidden for component %q",
+			result.Environments.Required, component.Name)
+	}
+
 	// Remove forbidden providers from preferred list.
 	result.Preferred = slices.DeleteFunc(result.Preferred, func(p string) bool {
 		return slices.Contains(result.Forbidden, p)
+	})
+
+	// Remove forbidden environments from preferred list.
+	result.Environments.Preferred = slices.DeleteFunc(result.Environments.Preferred, func(e string) bool {
+		return slices.Contains(result.Environments.Forbidden, e)
 	})
 
 	return result, nil

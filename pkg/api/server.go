@@ -57,6 +57,13 @@ func (s *Server) routes() {
 
 	// Providers
 	s.mux.HandleFunc("GET /api/v1/providers", s.handleListProviders)
+
+	// Environments
+	s.mux.HandleFunc("POST /api/v1/environments", s.handleCreateEnvironment)
+	s.mux.HandleFunc("GET /api/v1/environments", s.handleListEnvironments)
+	s.mux.HandleFunc("GET /api/v1/environments/{name}", s.handleGetEnvironment)
+	s.mux.HandleFunc("PUT /api/v1/environments/{name}", s.handleUpdateEnvironment)
+	s.mux.HandleFunc("DELETE /api/v1/environments/{name}", s.handleDeleteEnvironment)
 }
 
 // ServeHTTP implements http.Handler.

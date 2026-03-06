@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/dcm-io/dcm/pkg/policy"
+	"github.com/dcm-io/dcm/pkg/scheduler"
 	"github.com/dcm-io/dcm/pkg/types"
 )
 
@@ -18,6 +19,7 @@ type PlanStep struct {
 	Component    string         `json:"component"`
 	Diff         *types.Diff    `json:"diff"`
 	MatchedRules []string       `json:"matchedRules,omitempty"`
+	Environment  string         `json:"environment,omitempty"`
 }
 
 // ProviderRegistry looks up providers by name or resource type.
@@ -31,12 +33,18 @@ type ProviderRegistry interface {
 type Planner struct {
 	registry  ProviderRegistry
 	evaluator *policy.Evaluator
+	scheduler *scheduler.Scheduler
 }
 
 // NewPlanner creates a new planner with the given provider registry.
 // The policy evaluator is optional — pass nil to skip policy evaluation.
 func NewPlanner(registry ProviderRegistry, evaluator *policy.Evaluator) *Planner {
 	return &Planner{registry: registry, evaluator: evaluator}
+}
+
+// NewPlannerWithScheduler creates a planner that uses the scheduler for environment selection.
+func NewPlannerWithScheduler(sched *scheduler.Scheduler) *Planner {
+	return &Planner{scheduler: sched}
 }
 
 // CreatePlan builds a plan by comparing desired state (from the app spec)
@@ -64,8 +72,26 @@ func (p *Planner) CreatePlan(app *types.Application, currentState *types.State) 
 
 		var provider types.Provider
 		var matchedRules []string
+		var envName string
 
-		if p.evaluator != nil {
+		if p.scheduler != nil {
+			// Use scheduler for environment-aware selection.
+			result, err := p.scheduler.Schedule(component, app)
+			if err != nil {
+				return nil, fmt.Errorf("scheduling %s: %w", component.Name, err)
+			}
+
+			provider = result.Provider
+			matchedRules = result.MatchedRules
+			envName = result.Environment
+
+			// Merge policy-injected properties (component properties take precedence).
+			for k, v := range result.Properties {
+				if _, exists := properties[k]; !exists {
+					properties[k] = v
+				}
+			}
+		} else if p.evaluator != nil {
 			result, err := p.evaluator.Evaluate(component, app)
 			if err != nil {
 				return nil, fmt.Errorf("evaluating policies for %s: %w", component.Name, err)
@@ -94,11 +120,12 @@ func (p *Planner) CreatePlan(app *types.Application, currentState *types.State) 
 		}
 
 		desired := &types.Resource{
-			Name:       component.Name,
-			Type:       resourceType,
-			Provider:   provider.Name(),
-			Properties: properties,
-			Status:     types.ResourceStatusPending,
+			Name:        component.Name,
+			Type:        resourceType,
+			Provider:    provider.Name(),
+			Environment: envName,
+			Properties:  properties,
+			Status:      types.ResourceStatusPending,
 		}
 
 		var current *types.Resource
@@ -111,10 +138,13 @@ func (p *Planner) CreatePlan(app *types.Application, currentState *types.State) 
 			return nil, fmt.Errorf("planning %s: %w", component.Name, err)
 		}
 
+		diff.Environment = envName
+
 		plan.Steps = append(plan.Steps, PlanStep{
 			Component:    component.Name,
 			Diff:         diff,
 			MatchedRules: matchedRules,
+			Environment:  envName,
 		})
 	}
 

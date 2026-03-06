@@ -26,6 +26,7 @@ type Provider struct {
 type Config struct {
 	Kubeconfig string
 	Namespace  string
+	Context    string
 }
 
 // New creates a Kubernetes provider from the given config.
@@ -37,6 +38,9 @@ func New(cfg Config) (*Provider, error) {
 	}
 
 	configOverrides := &clientcmd.ConfigOverrides{}
+	if cfg.Context != "" {
+		configOverrides.CurrentContext = cfg.Context
+	}
 	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
 
 	restConfig, err := kubeConfig.ClientConfig()

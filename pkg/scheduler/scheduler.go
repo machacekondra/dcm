@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"math/rand/v2"
 	"slices"
 
 	"github.com/dcm-io/dcm/pkg/policy"
@@ -135,27 +136,28 @@ func (s *Scheduler) Schedule(component *types.Component, app *types.Application)
 }
 
 // filterByProviderPolicy removes environments whose provider type is forbidden,
-// or keeps only required provider type.
+// or keeps only the required provider type or environment name.
 func (s *Scheduler) filterByProviderPolicy(candidates []*EnvironmentInstance, result *policy.Result) ([]*EnvironmentInstance, error) {
-	// Required provider type.
+	// Required: match against both environment name and provider type.
 	if result.Required != "" {
 		var filtered []*EnvironmentInstance
 		for _, c := range candidates {
-			if c.Env.Spec.Provider == result.Required {
+			if c.Env.Metadata.Name == result.Required || c.Env.Spec.Provider == result.Required {
 				filtered = append(filtered, c)
 			}
 		}
 		if len(filtered) == 0 {
-			return nil, fmt.Errorf("required provider type %q has no matching environments", result.Required)
+			return nil, fmt.Errorf("required provider/environment %q has no matching environments", result.Required)
 		}
 		return filtered, nil
 	}
 
-	// Forbidden provider types.
+	// Forbidden: match against both environment name and provider type.
 	if len(result.Forbidden) > 0 {
 		var filtered []*EnvironmentInstance
 		for _, c := range candidates {
-			if !slices.Contains(result.Forbidden, c.Env.Spec.Provider) {
+			if !slices.Contains(result.Forbidden, c.Env.Spec.Provider) &&
+				!slices.Contains(result.Forbidden, c.Env.Metadata.Name) {
 				filtered = append(filtered, c)
 			}
 		}
@@ -238,9 +240,9 @@ func (s *Scheduler) orderByPreferred(candidates []*EnvironmentInstance, result *
 				return i
 			}
 		}
-		// Then provider preferred list.
+		// Then provider preferred list (match against both provider type and environment name).
 		for i, name := range provPreferred {
-			if c.Env.Spec.Provider == name {
+			if c.Env.Spec.Provider == name || c.Env.Metadata.Name == name {
 				return len(envPreferred) + i
 			}
 		}
@@ -275,6 +277,9 @@ func (s *Scheduler) applyStrategy(candidates []*EnvironmentInstance, strategy st
 
 	case "bin-pack":
 		return s.selectBinPack(candidates), nil
+
+	case "random":
+		return candidates[rand.IntN(len(candidates))], nil
 
 	default:
 		return nil, fmt.Errorf("unknown scheduling strategy: %s", strategy)

@@ -21,12 +21,14 @@ import {
   Spinner,
 } from '@patternfly/react-core';
 import { policies, type PolicyRecord } from '../api/client';
+import { PolicyFormModal } from './Policies';
 
 export default function PolicyDetail() {
   const { name } = useParams<{ name: string }>();
   const navigate = useNavigate();
   const [policy, setPolicy] = useState<PolicyRecord | null>(null);
   const [error, setError] = useState('');
+  const [isEditOpen, setEditOpen] = useState(false);
 
   const load = useCallback(() => {
     if (!name) return;
@@ -63,6 +65,7 @@ export default function PolicyDetail() {
             <Content component="h1">{policy.name}</Content>
           </FlexItem>
           <FlexItem>
+            <Button variant="secondary" onClick={() => setEditOpen(true)} style={{ marginRight: 8 }}>Edit</Button>
             <Button variant="danger" onClick={handleDelete}>Delete</Button>
           </FlexItem>
         </Flex>
@@ -176,6 +179,13 @@ export default function PolicyDetail() {
         </Card>
       ))}
     </PageSection>
+    <PolicyFormModal
+      mode="edit"
+      isOpen={isEditOpen}
+      policy={policy}
+      onClose={() => setEditOpen(false)}
+      onSaved={load}
+    />
     </>
   );
 }

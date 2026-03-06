@@ -26,7 +26,7 @@ import {
 } from '@patternfly/react-core';
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
 import { useNavigate } from 'react-router-dom';
-import { deployments, applications, policies as policiesApi, type DeploymentRecord, type ApplicationRecord, type PolicyRecord } from '../api/client';
+import { deployments, applications, type DeploymentRecord, type ApplicationRecord } from '../api/client';
 import StatusLabel from '../components/StatusLabel';
 
 const TERMINAL_STATUSES = ['destroyed', 'failed'];
@@ -98,7 +98,6 @@ export default function Deployments() {
                 <Th>ID</Th>
                 <Th>Application</Th>
                 <Th>Status</Th>
-                <Th>Policies</Th>
                 <Th>Created</Th>
                 <Th>Actions</Th>
               </Tr>
@@ -109,7 +108,6 @@ export default function Deployments() {
                   <Td dataLabel="ID"><code>{d.id.slice(0, 16)}</code></Td>
                   <Td dataLabel="Application">{d.application}</Td>
                   <Td dataLabel="Status"><StatusLabel status={d.status} /></Td>
-                  <Td dataLabel="Policies">{d.policies?.join(', ') || '—'}</Td>
                   <Td dataLabel="Created">{new Date(d.createdAt).toLocaleString()}</Td>
                   <Td dataLabel="Actions" isActionCell>
                     <Flex gap={{ default: 'gapSm' }}>
@@ -143,9 +141,7 @@ export default function Deployments() {
 
 function DeployModal({ isOpen, onClose, onDeployed }: { isOpen: boolean; onClose: () => void; onDeployed: () => void }) {
   const [apps, setApps] = useState<ApplicationRecord[]>([]);
-  const [pols, setPols] = useState<PolicyRecord[]>([]);
   const [selectedApp, setSelectedApp] = useState('');
-  const [selectedPolicies, setSelectedPolicies] = useState<string[]>([]);
   const [dryRun, setDryRun] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -155,18 +151,10 @@ function DeployModal({ isOpen, onClose, onDeployed }: { isOpen: boolean; onClose
   useEffect(() => {
     if (!isOpen) return;
     applications.list().then(setApps).catch(() => {});
-    policiesApi.list().then(setPols).catch(() => {});
     setSelectedApp('');
-    setSelectedPolicies([]);
     setDryRun(false);
     setError('');
   }, [isOpen]);
-
-  const togglePolicy = (name: string) => {
-    setSelectedPolicies(prev =>
-      prev.includes(name) ? prev.filter(p => p !== name) : [...prev, name]
-    );
-  };
 
   const handleSubmit = async () => {
     setError('');
@@ -174,7 +162,6 @@ function DeployModal({ isOpen, onClose, onDeployed }: { isOpen: boolean; onClose
     try {
       const dep = await deployments.create({
         application: selectedApp,
-        policies: selectedPolicies.length > 0 ? selectedPolicies : undefined,
         dryRun,
       });
       onClose();
@@ -212,21 +199,6 @@ function DeployModal({ isOpen, onClose, onDeployed }: { isOpen: boolean; onClose
             </SelectList>
           </Select>
         </FormGroup>
-
-        {pols.length > 0 && (
-          <FormGroup label="Policies" fieldId="deploy-policies" style={{ marginBottom: 16 }}>
-            {pols.map(p => (
-              <Checkbox
-                key={p.name}
-                id={`pol-${p.name}`}
-                label={`${p.name} (${p.rules.length} rules)`}
-                isChecked={selectedPolicies.includes(p.name)}
-                onChange={() => togglePolicy(p.name)}
-                style={{ marginBottom: 4 }}
-              />
-            ))}
-          </FormGroup>
-        )}
 
         <FormGroup fieldId="deploy-dryrun">
           <Checkbox

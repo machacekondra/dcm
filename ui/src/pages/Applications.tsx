@@ -87,6 +87,9 @@ export default function Applications() {
                 <Td dataLabel="Components">{app.components.length}</Td>
                 <Td dataLabel="Created">{new Date(app.createdAt).toLocaleString()}</Td>
                 <Td dataLabel="Actions" isActionCell>
+                  <Button variant="secondary" size="sm" onClick={e => { e.stopPropagation(); navigate(`/applications/${app.name}/edit`); }} style={{ marginRight: 8 }}>
+                    Edit
+                  </Button>
                   <Button variant="danger" size="sm" onClick={e => { e.stopPropagation(); handleDelete(app.name); }}>
                     Delete
                   </Button>

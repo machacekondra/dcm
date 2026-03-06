@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Applications from './pages/Applications';
 import ApplicationCreate from './pages/ApplicationCreate';
+import ApplicationEdit from './pages/ApplicationEdit';
 import ApplicationDetail from './pages/ApplicationDetail';
 import Policies from './pages/Policies';
 import PolicyDetail from './pages/PolicyDetail';
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="/applications" element={<Applications />} />
           <Route path="/applications/create" element={<ApplicationCreate />} />
           <Route path="/applications/:name" element={<ApplicationDetail />} />
+          <Route path="/applications/:name/edit" element={<ApplicationEdit />} />
           <Route path="/policies" element={<Policies />} />
           <Route path="/policies/:name" element={<PolicyDetail />} />
           <Route path="/deployments" element={<Deployments />} />

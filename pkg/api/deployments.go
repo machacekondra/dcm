@@ -358,12 +358,14 @@ func (s *Server) runDestroy(d *store.DeploymentRecord) {
 
 func (s *Server) computePlan(app *types.Application, d *store.DeploymentRecord) (*engine.Plan, error) {
 	var evaluator *policy.Evaluator
-	if len(d.Policies) > 0 {
-		policyTypes, err := s.loadPolicies(d.Policies)
-		if err != nil {
-			return nil, fmt.Errorf("loading policies: %w", err)
-		}
-		evaluator, err = policy.NewEvaluator(policyTypes)
+
+	// Load all policies — they self-select via match criteria.
+	allPolicies, err := s.loadAllPolicies()
+	if err != nil {
+		return nil, fmt.Errorf("loading policies: %w", err)
+	}
+	if len(allPolicies) > 0 {
+		evaluator, err = policy.NewEvaluator(allPolicies)
 		if err != nil {
 			return nil, fmt.Errorf("building evaluator: %w", err)
 		}

@@ -28,6 +28,7 @@ export default function Environments() {
   const [list, setList] = useState<EnvironmentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreateOpen, setCreateOpen] = useState(false);
+  const [editingEnv, setEditingEnv] = useState<EnvironmentRecord | null>(null);
   const [error, setError] = useState('');
 
   const load = useCallback(() => {
@@ -105,6 +106,9 @@ export default function Environments() {
                   </Td>
                   <Td dataLabel="Status"><Label isCompact color={env.status === 'active' ? 'green' : 'grey'}>{env.status}</Label></Td>
                   <Td dataLabel="Actions" isActionCell>
+                    <Button variant="secondary" size="sm" onClick={() => setEditingEnv(env)} style={{ marginRight: 8 }}>
+                      Edit
+                    </Button>
                     <Button variant="danger" size="sm" onClick={() => handleDelete(env.name)}>
                       Delete
                     </Button>
@@ -115,6 +119,7 @@ export default function Environments() {
           </Table>
         )}
         <CreateEnvironmentModal isOpen={isCreateOpen} onClose={() => setCreateOpen(false)} onCreated={load} />
+        <EditEnvironmentModal env={editingEnv} onClose={() => setEditingEnv(null)} onSaved={load} />
       </PageSection>
     </>
   );
@@ -203,6 +208,98 @@ function CreateEnvironmentModal({ isOpen, onClose, onCreated }: { isOpen: boolea
       </ModalBody>
       <ModalFooter>
         <Button onClick={handleSubmit} isLoading={submitting} isDisabled={!name || !provider || submitting}>Create</Button>
+        <Button variant="link" onClick={onClose}>Cancel</Button>
+      </ModalFooter>
+    </Modal>
+  );
+}
+
+function EditEnvironmentModal({ env, onClose, onSaved }: { env: EnvironmentRecord | null; onClose: () => void; onSaved: () => void }) {
+  const [provider, setProvider] = useState('');
+  const [labelsStr, setLabelsStr] = useState('');
+  const [configStr, setConfigStr] = useState('{}');
+  const [cpu, setCpu] = useState('');
+  const [memory, setMemory] = useState('');
+  const [pods, setPods] = useState('');
+  const [costTier, setCostTier] = useState('');
+  const [costRate, setCostRate] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (env) {
+      setProvider(env.provider);
+      setLabelsStr(env.labels && Object.keys(env.labels).length > 0 ? JSON.stringify(env.labels) : '');
+      setConfigStr(env.config && Object.keys(env.config).length > 0 ? JSON.stringify(env.config, null, 2) : '{}');
+      setCpu(env.resources?.cpu?.toString() ?? '');
+      setMemory(env.resources?.memory?.toString() ?? '');
+      setPods(env.resources?.pods?.toString() ?? '');
+      setCostTier(env.cost?.tier ?? '');
+      setCostRate(env.cost?.hourlyRate?.toString() ?? '');
+      setError('');
+    }
+  }, [env]);
+
+  const handleSubmit = async () => {
+    if (!env) return;
+    setError('');
+    setSubmitting(true);
+    try {
+      let labels: Record<string, string> | undefined;
+      if (labelsStr.trim()) labels = JSON.parse(labelsStr);
+      const config = JSON.parse(configStr);
+      const resources = cpu || memory || pods ? {
+        cpu: parseInt(cpu) || 0, memory: parseInt(memory) || 0, pods: parseInt(pods) || 0,
+      } : undefined;
+      const cost = costTier || costRate ? {
+        tier: costTier || 'standard', hourlyRate: parseFloat(costRate) || 0,
+      } : undefined;
+
+      await environments.update(env.name, { provider, labels, config, resources, cost });
+      onClose();
+      onSaved();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={!!env} onClose={onClose} variant="medium">
+      <ModalHeader title={`Edit Environment: ${env?.name ?? ''}`} />
+      <ModalBody>
+        {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
+        <FormGroup label="Name" fieldId="edit-env-name">
+          <TextInput id="edit-env-name" value={env?.name ?? ''} isDisabled />
+        </FormGroup>
+        <FormGroup label="Provider type" isRequired fieldId="edit-env-provider" style={{ marginTop: 16 }}>
+          <TextInput id="edit-env-provider" value={provider} onChange={(_e, v) => setProvider(v)} />
+        </FormGroup>
+        <FormGroup label="Labels (JSON)" fieldId="edit-env-labels" style={{ marginTop: 16 }}>
+          <TextInput id="edit-env-labels" value={labelsStr} onChange={(_e, v) => setLabelsStr(v)} placeholder='{"region": "eu-west-1"}' />
+        </FormGroup>
+        <FormGroup label="Config (JSON)" fieldId="edit-env-config" style={{ marginTop: 16 }}>
+          <TextArea id="edit-env-config" value={configStr} onChange={(_e, v) => setConfigStr(v)} rows={4} style={{ fontFamily: 'monospace', fontSize: 13 }} />
+        </FormGroup>
+        <FormGroup label="CPU (millicores)" fieldId="edit-env-cpu" style={{ marginTop: 16 }}>
+          <TextInput id="edit-env-cpu" type="number" value={cpu} onChange={(_e, v) => setCpu(v)} />
+        </FormGroup>
+        <FormGroup label="Memory (MB)" fieldId="edit-env-memory" style={{ marginTop: 16 }}>
+          <TextInput id="edit-env-memory" type="number" value={memory} onChange={(_e, v) => setMemory(v)} />
+        </FormGroup>
+        <FormGroup label="Pods" fieldId="edit-env-pods" style={{ marginTop: 16 }}>
+          <TextInput id="edit-env-pods" type="number" value={pods} onChange={(_e, v) => setPods(v)} />
+        </FormGroup>
+        <FormGroup label="Cost tier" fieldId="edit-env-cost-tier" style={{ marginTop: 16 }}>
+          <TextInput id="edit-env-cost-tier" value={costTier} onChange={(_e, v) => setCostTier(v)} />
+        </FormGroup>
+        <FormGroup label="Hourly rate" fieldId="edit-env-cost-rate" style={{ marginTop: 16 }}>
+          <TextInput id="edit-env-cost-rate" type="number" value={costRate} onChange={(_e, v) => setCostRate(v)} />
+        </FormGroup>
+      </ModalBody>
+      <ModalFooter>
+        <Button onClick={handleSubmit} isLoading={submitting} isDisabled={!provider || submitting}>Save</Button>
         <Button variant="link" onClick={onClose}>Cancel</Button>
       </ModalFooter>
     </Modal>

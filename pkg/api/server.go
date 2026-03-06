@@ -131,3 +131,23 @@ func (s *Server) loadPolicies(names []string) ([]types.Policy, error) {
 	}
 	return policies, nil
 }
+
+// loadAllPolicies loads every policy from the store.
+func (s *Server) loadAllPolicies() ([]types.Policy, error) {
+	recs, err := s.store.ListPolicies()
+	if err != nil {
+		return nil, err
+	}
+	var policies []types.Policy
+	for _, rec := range recs {
+		var rules []types.PolicyRule
+		json.Unmarshal(rec.Rules, &rules)
+		policies = append(policies, types.Policy{
+			APIVersion: "dcm.io/v1",
+			Kind:       "Policy",
+			Metadata:   types.Metadata{Name: rec.Name},
+			Spec:       types.PolicySpec{Rules: rules},
+		})
+	}
+	return policies, nil
+}

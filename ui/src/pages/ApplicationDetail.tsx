@@ -72,6 +72,7 @@ export default function ApplicationDetail() {
             <Content component="h1">{app.name}</Content>
           </FlexItem>
           <FlexItem>
+            <Button variant="secondary" onClick={() => navigate(`/applications/${name}/edit`)} style={{ marginRight: 8 }}>Edit</Button>
             <Button variant="danger" onClick={handleDelete}>Delete</Button>
           </FlexItem>
         </Flex>

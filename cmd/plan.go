@@ -7,6 +7,7 @@ import (
 	"github.com/dcm-io/dcm/pkg/engine"
 	"github.com/dcm-io/dcm/pkg/loader"
 	"github.com/dcm-io/dcm/pkg/provider"
+	k8sprovider "github.com/dcm-io/dcm/pkg/provider/kubernetes"
 	"github.com/dcm-io/dcm/pkg/provider/mock"
 	"github.com/dcm-io/dcm/pkg/state"
 	"github.com/dcm-io/dcm/pkg/types"
@@ -76,7 +77,16 @@ func printPlan(plan *engine.Plan) {
 
 func buildRegistry() *provider.Registry {
 	registry := provider.NewRegistry()
+
+	// Always register the mock provider for testing.
 	registry.Register(mock.New())
+
+	// Register Kubernetes provider if a kubeconfig is available.
+	k8s, err := k8sprovider.New(k8sprovider.Config{})
+	if err == nil {
+		registry.Register(k8s)
+	}
+
 	return registry
 }
 

@@ -98,7 +98,7 @@ func buildRegistry() *provider.Registry {
 	registry := provider.NewRegistry()
 
 	// Always register the mock provider for testing.
-	registry.Register(mock.New())
+	//registry.Register(mock.New())
 
 	// Register Kubernetes provider if a kubeconfig is available.
 	k8s, err := k8sprovider.New(k8sprovider.Config{})

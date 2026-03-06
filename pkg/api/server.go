@@ -53,10 +53,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/deployments/{id}", s.handleGetDeployment)
 	s.mux.HandleFunc("DELETE /api/v1/deployments/{id}", s.handleDeleteDeployment)
 	s.mux.HandleFunc("POST /api/v1/deployments/{id}/plan", s.handleDeploymentPlan)
+	s.mux.HandleFunc("POST /api/v1/deployments/{id}/apply", s.handleDeploymentApply)
 	s.mux.HandleFunc("GET /api/v1/deployments/{id}/history", s.handleDeploymentHistory)
 
-	// Providers
+	// Providers & Types
 	s.mux.HandleFunc("GET /api/v1/providers", s.handleListProviders)
+	s.mux.HandleFunc("GET /api/v1/types", s.handleListTypes)
 
 	// Environments
 	s.mux.HandleFunc("POST /api/v1/environments", s.handleCreateEnvironment)

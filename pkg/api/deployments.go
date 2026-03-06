@@ -129,24 +129,30 @@ func (s *Server) handleDeleteDeployment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if d.Status != "ready" && d.Status != "failed" {
+	switch d.Status {
+	case "ready":
+		// Trigger async resource destruction.
+		go s.runDestroy(d)
+		d.Status = "destroying"
+		s.store.UpdateDeployment(d)
+		s.store.AddHistory(&store.HistoryRecord{
+			DeploymentID: id,
+			Action:       "destroying",
+		})
+		writeJSON(w, http.StatusAccepted, d)
+
+	case "destroyed", "failed", "planned":
+		// Hard delete the record from the database.
+		if err := s.store.DeleteDeployment(id); err != nil {
+			handleStoreError(w, err, "deployment")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
 		writeError(w, http.StatusConflict,
-			fmt.Sprintf("cannot destroy deployment in status %q", d.Status))
-		return
+			fmt.Sprintf("cannot delete deployment in status %q", d.Status))
 	}
-
-	// Async destroy.
-	go s.runDestroy(d)
-
-	d.Status = "destroying"
-	s.store.UpdateDeployment(d)
-
-	s.store.AddHistory(&store.HistoryRecord{
-		DeploymentID: id,
-		Action:       "destroying",
-	})
-
-	writeJSON(w, http.StatusAccepted, d)
 }
 
 func (s *Server) handleDeploymentPlan(w http.ResponseWriter, r *http.Request) {
@@ -171,6 +177,36 @@ func (s *Server) handleDeploymentPlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, plan)
+}
+
+func (s *Server) handleDeploymentApply(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	d, err := s.store.GetDeployment(id)
+	if err != nil {
+		handleStoreError(w, err, "deployment")
+		return
+	}
+
+	if d.Status != "planned" {
+		writeError(w, http.StatusConflict,
+			fmt.Sprintf("can only apply a planned deployment, current status is %q", d.Status))
+		return
+	}
+
+	appRec, err := s.store.GetApplication(d.ApplicationName)
+	if err != nil {
+		handleStoreError(w, err, "application")
+		return
+	}
+
+	// Kick off async apply using the existing plan.
+	go s.runApplyPlanned(d, appRec)
+
+	d.Status = "deploying"
+	s.store.UpdateDeployment(d)
+	s.store.AddHistory(&store.HistoryRecord{DeploymentID: id, Action: "deploying"})
+
+	writeJSON(w, http.StatusAccepted, d)
 }
 
 func (s *Server) handleDeploymentHistory(w http.ResponseWriter, r *http.Request) {
@@ -249,6 +285,48 @@ func (s *Server) runDeployment(deploymentID string, appRec *store.ApplicationRec
 	})
 
 	log.Printf("deployment %s: complete", deploymentID)
+}
+
+func (s *Server) runApplyPlanned(d *store.DeploymentRecord, appRec *store.ApplicationRecord) {
+	// Re-read to get latest state.
+	d, err := s.store.GetDeployment(d.ID)
+	if err != nil {
+		log.Printf("deployment %s: failed to load: %v", d.ID, err)
+		return
+	}
+
+	app := recordToApplication(appRec)
+
+	var plan engine.Plan
+	if d.Plan != nil {
+		json.Unmarshal(d.Plan, &plan)
+	}
+
+	state := types.NewState(app.Metadata.Name)
+	if d.State != nil {
+		json.Unmarshal(d.State, state)
+	}
+
+	executor := engine.NewExecutor(s.registry)
+	if err := executor.Execute(&plan, state); err != nil {
+		stateJSON, _ := json.Marshal(state)
+		d.State = stateJSON
+		s.failDeployment(d, "apply failed: "+err.Error())
+		return
+	}
+
+	stateJSON, _ := json.Marshal(state)
+	d.State = stateJSON
+	d.Status = "ready"
+	s.store.UpdateDeployment(d)
+
+	s.store.AddHistory(&store.HistoryRecord{
+		DeploymentID: d.ID,
+		Action:       "applied",
+		Details:      stateJSON,
+	})
+
+	log.Printf("deployment %s: applied from plan", d.ID)
 }
 
 func (s *Server) runDestroy(d *store.DeploymentRecord) {

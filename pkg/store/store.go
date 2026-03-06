@@ -357,6 +357,20 @@ func (s *Store) UpdateDeployment(d *DeploymentRecord) error {
 	return err
 }
 
+func (s *Store) DeleteDeployment(id string) error {
+	// Delete history first, then deployment.
+	s.db.Exec(`DELETE FROM deployment_history WHERE deployment_id = ?`, id)
+	res, err := s.db.Exec(`DELETE FROM deployments WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // --- Deployment History ---
 
 type HistoryRecord struct {

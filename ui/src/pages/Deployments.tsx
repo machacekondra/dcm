@@ -4,6 +4,8 @@ import {
   Button,
   Checkbox,
   EmptyState,
+  Flex,
+  FlexItem,
   EmptyStateActions,
   EmptyStateBody,
   EmptyStateFooter,
@@ -27,6 +29,8 @@ import { useNavigate } from 'react-router-dom';
 import { deployments, applications, policies as policiesApi, type DeploymentRecord, type ApplicationRecord, type PolicyRecord } from '../api/client';
 import StatusLabel from '../components/StatusLabel';
 
+const TERMINAL_STATUSES = ['destroyed', 'failed'];
+
 export default function Deployments() {
   const [list, setList] = useState<DeploymentRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,6 +44,18 @@ export default function Deployments() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleDelete = async (e: React.MouseEvent, d: DeploymentRecord) => {
+    e.stopPropagation();
+    const action = d.status === 'ready' ? 'Destroy' : 'Delete';
+    if (!confirm(`${action} deployment "${d.id.slice(0, 16)}" (${d.application})?`)) return;
+    try {
+      await deployments.destroy(d.id);
+      load();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   // Auto-refresh if any deployment is in progress.
   useEffect(() => {
@@ -84,6 +100,7 @@ export default function Deployments() {
                 <Th>Status</Th>
                 <Th>Policies</Th>
                 <Th>Created</Th>
+                <Th>Actions</Th>
               </Tr>
             </Thead>
             <Tbody>
@@ -94,6 +111,25 @@ export default function Deployments() {
                   <Td dataLabel="Status"><StatusLabel status={d.status} /></Td>
                   <Td dataLabel="Policies">{d.policies?.join(', ') || '—'}</Td>
                   <Td dataLabel="Created">{new Date(d.createdAt).toLocaleString()}</Td>
+                  <Td dataLabel="Actions" isActionCell>
+                    <Flex gap={{ default: 'gapSm' }}>
+                      {d.status === 'planned' && (
+                        <FlexItem>
+                          <Button variant="primary" size="sm" onClick={async e => {
+                            e.stopPropagation();
+                            try { await deployments.apply(d.id); load(); } catch (err: unknown) { setError(err instanceof Error ? err.message : String(err)); }
+                          }}>Apply</Button>
+                        </FlexItem>
+                      )}
+                      {(d.status === 'ready' || d.status === 'planned' || TERMINAL_STATUSES.includes(d.status)) && (
+                        <FlexItem>
+                          <Button variant="danger" size="sm" onClick={e => handleDelete(e, d)}>
+                            {d.status === 'ready' ? 'Destroy' : 'Delete'}
+                          </Button>
+                        </FlexItem>
+                      )}
+                    </Flex>
+                  </Td>
                 </Tr>
               ))}
             </Tbody>

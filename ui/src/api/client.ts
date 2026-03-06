@@ -182,6 +182,7 @@ export const deployments = {
     request<DeploymentRecord>('/deployments', { method: 'POST', body: JSON.stringify(body) }),
   destroy: (id: string) => request<DeploymentRecord>(`/deployments/${id}`, { method: 'DELETE' }),
   plan: (id: string) => request<Plan>(`/deployments/${id}/plan`, { method: 'POST' }),
+  apply: (id: string) => request<DeploymentRecord>(`/deployments/${id}/apply`, { method: 'POST' }),
   history: (id: string) => request<HistoryRecord[]>(`/deployments/${id}/history`),
 };
 
@@ -200,4 +201,25 @@ export const environments = {
 
 export const providers = {
   list: () => request<ProviderInfo[]>('/providers'),
+};
+
+// --- Types ---
+
+export interface PropertySchema {
+  name: string;
+  type: string;
+  required?: boolean;
+  default?: unknown;
+  description?: string;
+}
+
+export interface TypeSchema {
+  type: string;
+  description: string;
+  providers: string[];
+  properties: PropertySchema[];
+}
+
+export const types = {
+  list: () => request<TypeSchema[]>('/types'),
 };

@@ -66,6 +66,26 @@ export default function DeploymentDetail() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!id || !confirm('Delete this deployment record permanently?')) return;
+    try {
+      await deployments.destroy(id);
+      navigate('/deployments');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const handleApply = async () => {
+    if (!id || !confirm('Apply this planned deployment? Resources will be created.')) return;
+    try {
+      await deployments.apply(id);
+      load();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   if (error && !dep) return <PageSection><Alert variant="danger" title={error} /></PageSection>;
   if (!dep) return <PageSection><Spinner /></PageSection>;
 
@@ -90,9 +110,17 @@ export default function DeploymentDetail() {
             </Flex>
           </FlexItem>
           <FlexItem>
-            {(dep.status === 'ready' || dep.status === 'failed') && (
-              <Button variant="danger" onClick={handleDestroy}>Destroy</Button>
-            )}
+            <Flex gap={{ default: 'gapSm' }}>
+              {dep.status === 'planned' && (
+                <FlexItem><Button variant="primary" onClick={handleApply}>Apply</Button></FlexItem>
+              )}
+              {dep.status === 'ready' && (
+                <FlexItem><Button variant="danger" onClick={handleDestroy}>Destroy</Button></FlexItem>
+              )}
+              {(dep.status === 'planned' || dep.status === 'destroyed' || dep.status === 'failed') && (
+                <FlexItem><Button variant="danger" onClick={handleDelete}>Delete</Button></FlexItem>
+              )}
+            </Flex>
           </FlexItem>
         </Flex>
       </PageSection>

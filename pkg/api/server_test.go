@@ -10,7 +10,9 @@ import (
 
 	"github.com/dcm-io/dcm/pkg/provider"
 	"github.com/dcm-io/dcm/pkg/provider/mock"
+	"github.com/dcm-io/dcm/pkg/scheduler"
 	"github.com/dcm-io/dcm/pkg/store"
+	"github.com/dcm-io/dcm/pkg/types"
 )
 
 func setupTestServer(t *testing.T) *Server {
@@ -21,8 +23,12 @@ func setupTestServer(t *testing.T) *Server {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	reg := provider.NewRegistry()
-	reg.Register(mock.New())
+	factories := provider.NewFactoryRegistry()
+	factories.Register("mock", func(config map[string]any) (types.Provider, error) {
+		return mock.New(), nil
+	})
+	reg := scheduler.NewRegistry(factories)
+	reg.RegisterProvider(mock.New())
 	return NewServer(db, reg)
 }
 
@@ -256,15 +262,16 @@ func TestDeploymentLifecycle(t *testing.T) {
 		t.Fatalf("expected at least 3 history entries, got %d", len(history))
 	}
 
-	// Duplicate deployment should fail (one per app).
+	// Multiple deployments of the same app should be allowed (dry-run to avoid background goroutine).
 	w = doRequest(t, s, "POST", "/api/v1/deployments", map[string]any{
 		"application": "deploy-app",
+		"dryRun":      true,
 	})
-	if w.Code != http.StatusConflict {
-		t.Fatalf("duplicate deploy: expected 409, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("second deploy (dry-run): expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	// Destroy deployment.
+	// Destroy the first deployment.
 	w = doRequest(t, s, "DELETE", "/api/v1/deployments/"+dep.ID, nil)
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("destroy: expected 202, got %d: %s", w.Code, w.Body.String())

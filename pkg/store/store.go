@@ -168,7 +168,7 @@ func (s *Store) DeleteApplication(name string) error {
 	// Check for active deployments.
 	var count int
 	err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM deployments WHERE application_name = ? AND status NOT IN ('destroyed', 'failed')`,
+		`SELECT COUNT(*) FROM deployments WHERE application_name = ? AND status NOT IN ('destroyed', 'failed', 'planned')`,
 		name,
 	).Scan(&count)
 	if err != nil {
@@ -303,15 +303,6 @@ func (s *Store) GetDeployment(id string) (*DeploymentRecord, error) {
 	row := s.db.QueryRow(
 		`SELECT id, application_name, status, plan, state, error, policies, created_at, updated_at
 		 FROM deployments WHERE id = ?`, id,
-	)
-	return scanDeployment(row)
-}
-
-func (s *Store) GetDeploymentByApp(appName string) (*DeploymentRecord, error) {
-	row := s.db.QueryRow(
-		`SELECT id, application_name, status, plan, state, error, policies, created_at, updated_at
-		 FROM deployments WHERE application_name = ? AND status NOT IN ('destroyed', 'failed')
-		 ORDER BY created_at DESC LIMIT 1`, appName,
 	)
 	return scanDeployment(row)
 }

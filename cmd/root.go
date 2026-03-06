@@ -12,6 +12,7 @@ var (
 	stateFile   string
 	policyPaths []string
 	envPaths    []string
+	dbPath      string
 )
 
 var rootCmd = &cobra.Command{
@@ -32,4 +33,5 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&stateFile, "state", "", "Path to the state file (defaults to <app-name>.dcm.state)")
 	rootCmd.PersistentFlags().StringSliceVarP(&policyPaths, "policy", "p", nil, "Paths to policy files or directories (can be repeated)")
 	rootCmd.PersistentFlags().StringSliceVarP(&envPaths, "environment", "e", nil, "Paths to environment files or directories (can be repeated)")
+	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "dcm.db", "Path to the SQLite database")
 }

@@ -2,6 +2,8 @@ package provider
 
 import (
 	"fmt"
+	"log"
+
 	"github.com/dcm-io/dcm/pkg/types"
 )
 
@@ -20,6 +22,7 @@ func NewFactoryRegistry() *FactoryRegistry {
 
 // Register adds a factory for a provider type.
 func (r *FactoryRegistry) Register(providerType string, factory ProviderFactory) {
+	log.Printf("[factory] registered provider type %q", providerType)
 	r.factories[providerType] = factory
 }
 
@@ -29,7 +32,14 @@ func (r *FactoryRegistry) Create(providerType string, config map[string]any) (ty
 	if !ok {
 		return nil, fmt.Errorf("unknown provider type: %s", providerType)
 	}
-	return factory(config)
+	log.Printf("[factory] creating provider instance type=%q config=%v", providerType, config)
+	p, err := factory(config)
+	if err != nil {
+		log.Printf("[factory] failed to create provider type=%q: %v", providerType, err)
+		return nil, err
+	}
+	log.Printf("[factory] created provider %q (type=%s)", p.Name(), providerType)
+	return p, nil
 }
 
 // Has checks if a factory exists for the given provider type.

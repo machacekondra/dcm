@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"slices"
 
@@ -48,12 +49,15 @@ type ScheduleResult struct {
 // Schedule selects the best environment for a component.
 func (s *Scheduler) Schedule(component *types.Component, app *types.Application) (*ScheduleResult, error) {
 	resourceType := types.ResourceType(component.Type)
+	log.Printf("[scheduler] scheduling component %q (type=%s)", component.Name, component.Type)
 
 	// Start with all environments that support the component's resource type.
 	candidates := s.registry.ListByCapability(resourceType)
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("no environment supports resource type %q", component.Type)
 	}
+	log.Printf("[scheduler]   %d candidate environment(s) for type %q: %v",
+		len(candidates), component.Type, envNames(candidates))
 
 	var matchedRules []string
 	var properties map[string]any
@@ -98,6 +102,12 @@ func (s *Scheduler) Schedule(component *types.Component, app *types.Application)
 
 		// Order by environment preferred list, then provider preferred list.
 		candidates = s.orderByPreferred(candidates, result)
+
+		log.Printf("[scheduler]   after policy filters: %d candidate(s) remaining: %v, strategy=%s",
+			len(candidates), envNames(candidates), strategy)
+		if len(matchedRules) > 0 {
+			log.Printf("[scheduler]   matched rules: %v", matchedRules)
+		}
 	}
 
 	if len(candidates) == 0 {
@@ -110,6 +120,9 @@ func (s *Scheduler) Schedule(component *types.Component, app *types.Application)
 	if err != nil {
 		return nil, err
 	}
+
+	log.Printf("[scheduler]   selected environment %q (provider=%s, strategy=%s) for component %q",
+		selected.Env.Metadata.Name, selected.Env.Spec.Provider, strategy, component.Name)
 
 	return &ScheduleResult{
 		Environment:  selected.Env.Metadata.Name,
@@ -354,4 +367,12 @@ func buildEnvironmentCELMap(e *EnvironmentInstance) map[string]any {
 		"resources": resources,
 		"cost":      cost,
 	}
+}
+
+func envNames(envs []*EnvironmentInstance) []string {
+	names := make([]string, len(envs))
+	for i, e := range envs {
+		names[i] = e.Env.Metadata.Name
+	}
+	return names
 }

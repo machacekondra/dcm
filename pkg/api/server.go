@@ -6,7 +6,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/dcm-io/dcm/pkg/engine"
+	"github.com/dcm-io/dcm/pkg/scheduler"
 	"github.com/dcm-io/dcm/pkg/store"
 	"github.com/dcm-io/dcm/pkg/types"
 )
@@ -14,12 +14,12 @@ import (
 // Server is the DCM API server.
 type Server struct {
 	store    *store.Store
-	registry engine.ProviderRegistry
+	registry *scheduler.Registry
 	mux      *http.ServeMux
 }
 
 // NewServer creates a new API server.
-func NewServer(st *store.Store, registry engine.ProviderRegistry) *Server {
+func NewServer(st *store.Store, registry *scheduler.Registry) *Server {
 	s := &Server{
 		store:    st,
 		registry: registry,

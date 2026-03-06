@@ -85,7 +85,10 @@ func runPolicyEvaluate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("creating evaluator: %w", err)
 	}
 
-	registry := buildRegistry()
+	schedReg, err := buildSchedulerRegistry()
+	if err != nil {
+		return err
+	}
 
 	fmt.Printf("\nPolicy evaluation for application: %s\n", app.Metadata.Name)
 	fmt.Println("═══════════════════════════════════════════════════════")
@@ -128,7 +131,7 @@ func runPolicyEvaluate(cmd *cobra.Command, args []string) error {
 
 		// Show which provider would be selected.
 		resourceType := types.ResourceType(component.Type)
-		selected, err := policy.SelectProvider(result, registry, resourceType)
+		selected, err := policy.SelectProvider(result, schedReg, resourceType)
 		if err != nil {
 			fmt.Printf("    Selected provider: ERROR — %v\n", err)
 		} else {

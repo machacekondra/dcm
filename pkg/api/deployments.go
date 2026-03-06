@@ -9,6 +9,7 @@ import (
 
 	"github.com/dcm-io/dcm/pkg/engine"
 	"github.com/dcm-io/dcm/pkg/policy"
+	"github.com/dcm-io/dcm/pkg/scheduler"
 	"github.com/dcm-io/dcm/pkg/store"
 	"github.com/dcm-io/dcm/pkg/types"
 )
@@ -35,15 +36,6 @@ func (s *Server) handleCreateDeployment(w http.ResponseWriter, r *http.Request) 
 	appRec, err := s.store.GetApplication(req.Application)
 	if err != nil {
 		handleStoreError(w, err, "application")
-		return
-	}
-
-	// Check for existing active deployment (one per app).
-	existing, err := s.store.GetDeploymentByApp(req.Application)
-	if err == nil && existing != nil {
-		writeError(w, http.StatusConflict,
-			fmt.Sprintf("application %q already has an active deployment %q (status: %s)",
-				req.Application, existing.ID, existing.Status))
 		return
 	}
 
@@ -336,9 +328,14 @@ func (s *Server) runDestroy(d *store.DeploymentRecord) {
 	}
 
 	for name, resource := range state.Resources {
-		provider, ok := s.registry.Get(resource.Provider)
+		// Look up by environment name first, fall back to provider type name.
+		lookupName := resource.Provider
+		if resource.Environment != "" {
+			lookupName = resource.Environment
+		}
+		provider, ok := s.registry.Get(lookupName)
 		if !ok {
-			log.Printf("deployment %s: provider %q not found for resource %q", d.ID, resource.Provider, name)
+			log.Printf("deployment %s: provider %q not found for resource %q", d.ID, lookupName, name)
 			continue
 		}
 		if err := provider.Destroy(resource); err != nil {
@@ -378,7 +375,12 @@ func (s *Server) computePlan(app *types.Application, d *store.DeploymentRecord) 
 		json.Unmarshal(d.State, currentState)
 	}
 
-	planner := engine.NewPlanner(s.registry, evaluator)
+	sched, err := scheduler.NewScheduler(s.registry, evaluator)
+	if err != nil {
+		return nil, fmt.Errorf("creating scheduler: %w", err)
+	}
+
+	planner := engine.NewPlannerWithScheduler(sched)
 	return planner.CreatePlan(app, currentState)
 }
 

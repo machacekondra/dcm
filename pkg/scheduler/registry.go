@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"fmt"
+	"log"
 	"slices"
 
 	"github.com/dcm-io/dcm/pkg/provider"
@@ -43,12 +44,16 @@ func (r *Registry) RegisterEnvironment(env types.Environment) error {
 		Env:      env,
 		Provider: p,
 	}
+	log.Printf("[registry] registered environment %q (provider=%s, capabilities=%v)",
+		env.Metadata.Name, env.Spec.Provider, capStrings(p.Capabilities()))
 	return nil
 }
 
 // RegisterProvider registers a bare provider as a default environment (backward compat).
 // The environment name matches the provider name.
 func (r *Registry) RegisterProvider(p types.Provider) {
+	log.Printf("[registry] registered default environment %q (backward-compat, capabilities=%v)",
+		p.Name(), capStrings(p.Capabilities()))
 	r.environments[p.Name()] = &EnvironmentInstance{
 		Env: types.Environment{
 			Metadata: types.Metadata{Name: p.Name()},

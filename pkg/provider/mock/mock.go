@@ -44,7 +44,7 @@ func (p *Provider) Plan(desired, current *types.Resource) (*types.Diff, error) {
 	if !propsEqual(desired.Properties, current.Properties) {
 		return &types.Diff{
 			Action:   types.DiffActionUpdate,
-			Resource: desired.Name,
+			Resource: current.Name,
 			Type:     desired.Type,
 			Provider: p.Name(),
 			Before:   current.Properties,
@@ -54,7 +54,7 @@ func (p *Provider) Plan(desired, current *types.Resource) (*types.Diff, error) {
 
 	return &types.Diff{
 		Action:   types.DiffActionNone,
-		Resource: desired.Name,
+		Resource: current.Name,
 		Type:     desired.Type,
 		Provider: p.Name(),
 	}, nil

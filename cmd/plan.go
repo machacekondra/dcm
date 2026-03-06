@@ -12,6 +12,7 @@ import (
 	"github.com/dcm-io/dcm/pkg/provider/mock"
 	"github.com/dcm-io/dcm/pkg/scheduler"
 	"github.com/dcm-io/dcm/pkg/state"
+	"github.com/dcm-io/dcm/pkg/store"
 	"github.com/dcm-io/dcm/pkg/types"
 	"github.com/spf13/cobra"
 )
@@ -94,21 +95,6 @@ func printPlan(plan *engine.Plan) {
 	fmt.Printf("  %d to create, %d to update, %d to delete, %d unchanged\n\n", creates, updates, deletes, unchanged)
 }
 
-func buildRegistry() *provider.Registry {
-	registry := provider.NewRegistry()
-
-	// Always register the mock provider for testing.
-	//registry.Register(mock.New())
-
-	// Register Kubernetes provider if a kubeconfig is available.
-	k8s, err := k8sprovider.New(k8sprovider.Config{})
-	if err == nil {
-		registry.Register(k8s)
-	}
-
-	return registry
-}
-
 func buildFactories() *provider.FactoryRegistry {
 	factories := provider.NewFactoryRegistry()
 
@@ -137,6 +123,7 @@ func buildSchedulerRegistry() (*scheduler.Registry, error) {
 	reg := scheduler.NewRegistry(factories)
 
 	if len(envPaths) > 0 {
+		// Load from YAML files.
 		envs, err := loader.LoadEnvironments(envPaths)
 		if err != nil {
 			return nil, fmt.Errorf("loading environments: %w", err)
@@ -146,13 +133,35 @@ func buildSchedulerRegistry() (*scheduler.Registry, error) {
 				return nil, fmt.Errorf("registering environment %q: %w", env.Metadata.Name, err)
 			}
 		}
-		fmt.Printf("Loaded %d environment(s)\n", len(envs))
+		fmt.Printf("Loaded %d environment(s) from files\n", len(envs))
 	} else {
-		// Backward compat: register providers directly as default environments.
-		reg.RegisterProvider(mock.New())
-		k8s, err := k8sprovider.New(k8sprovider.Config{})
-		if err == nil {
-			reg.RegisterProvider(k8s)
+		// Load from database.
+		db, err := store.New(dbPath)
+		if err != nil {
+			return nil, fmt.Errorf("opening database: %w", err)
+		}
+		defer db.Close()
+
+		envRecs, err := db.ListEnvironments()
+		if err != nil {
+			return nil, fmt.Errorf("listing environments: %w", err)
+		}
+
+		for _, rec := range envRecs {
+			if rec.Status != "active" {
+				continue
+			}
+			env := storeEnvToType(rec)
+			if err := reg.RegisterEnvironment(env); err != nil {
+				return nil, fmt.Errorf("registering environment %q: %w", rec.Name, err)
+			}
+		}
+
+		if len(envRecs) > 0 {
+			fmt.Printf("Loaded %d environment(s) from database\n", len(envRecs))
+		} else {
+			// No environments in DB — register mock as fallback.
+			reg.RegisterProvider(mock.New())
 		}
 	}
 

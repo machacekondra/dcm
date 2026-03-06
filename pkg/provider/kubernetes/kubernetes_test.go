@@ -1,6 +1,7 @@
 package kubernetes
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dcm-io/dcm/pkg/types"
@@ -90,6 +91,9 @@ func TestProvider_ApplyAndDestroy(t *testing.T) {
 
 	if resource.Status != types.ResourceStatusReady {
 		t.Errorf("expected ready status, got %s", resource.Status)
+	}
+	if !strings.HasPrefix(resource.Name, "web-") {
+		t.Errorf("expected resource name to start with 'web-', got %q", resource.Name)
 	}
 	if resource.Outputs["namespace"] != "test-ns" {
 		t.Errorf("expected namespace test-ns in outputs, got %v", resource.Outputs["namespace"])

@@ -10,8 +10,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var envDB string
-
 var environmentCmd = &cobra.Command{
 	Use:     "environment",
 	Aliases: []string{"env"},
@@ -52,8 +50,6 @@ var envCreateFile string
 
 func init() {
 	rootCmd.AddCommand(environmentCmd)
-	environmentCmd.PersistentFlags().StringVar(&envDB, "db", "dcm.db", "Path to the SQLite database")
-
 	environmentCmd.AddCommand(envListCmd)
 	environmentCmd.AddCommand(envCreateCmd)
 	environmentCmd.AddCommand(envDeleteCmd)
@@ -64,9 +60,9 @@ func init() {
 }
 
 func openEnvDB() (*store.Store, error) {
-	db, err := store.New(envDB)
+	db, err := store.New(dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("opening database %s: %w", envDB, err)
+		return nil, fmt.Errorf("opening database %s: %w", dbPath, err)
 	}
 	return db, nil
 }

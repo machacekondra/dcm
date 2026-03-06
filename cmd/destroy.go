@@ -25,7 +25,11 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	registry := buildRegistry()
+	schedReg, err := buildSchedulerRegistry()
+	if err != nil {
+		return err
+	}
+
 	statePath := resolveStatePath(app.Metadata.Name)
 	store := state.NewStore(statePath)
 
@@ -43,7 +47,7 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 	fmt.Println("─────────────────────────────────")
 
 	for name, resource := range currentState.Resources {
-		provider, ok := registry.Get(resource.Provider)
+		provider, ok := schedReg.Get(resource.Provider)
 		if !ok {
 			return fmt.Errorf("provider %q not found for resource %q", resource.Provider, name)
 		}

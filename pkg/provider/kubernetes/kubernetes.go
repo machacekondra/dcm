@@ -2,6 +2,8 @@ package kubernetes
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 
@@ -91,9 +93,10 @@ func (p *Provider) Plan(desired, current *types.Resource) (*types.Diff, error) {
 	}
 
 	if !propsEqual(desired.Properties, current.Properties) {
+		// Use current.Name (the actual k8s resource name) for updates.
 		return &types.Diff{
 			Action:   types.DiffActionUpdate,
-			Resource: desired.Name,
+			Resource: current.Name,
 			Type:     desired.Type,
 			Provider: p.Name(),
 			Before:   current.Properties,
@@ -103,7 +106,7 @@ func (p *Provider) Plan(desired, current *types.Resource) (*types.Diff, error) {
 
 	return &types.Diff{
 		Action:   types.DiffActionNone,
-		Resource: desired.Name,
+		Resource: current.Name,
 		Type:     desired.Type,
 		Provider: p.Name(),
 	}, nil
@@ -139,77 +142,147 @@ func (p *Provider) Apply(diff *types.Diff) (*types.Resource, error) {
 		}
 	}
 
-	labels := map[string]string{
-		"app.kubernetes.io/name":       name,
-		"app.kubernetes.io/managed-by": "dcm",
-	}
-
-	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: p.namespace,
-			Labels:    labels,
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: &replicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: labels,
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: labels},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  name,
-							Image: image,
-							Ports: []corev1.ContainerPort{
-								{ContainerPort: port},
-							},
-							Env: envVars,
-						},
-					},
-				},
-			},
-		},
-	}
-
-	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: p.namespace,
-			Labels:    labels,
-		},
-		Spec: corev1.ServiceSpec{
-			Selector: labels,
-			Ports: []corev1.ServicePort{
-				{
-					Port:       port,
-					TargetPort: intstr.FromInt32(port),
-					Protocol:   corev1.ProtocolTCP,
-				},
-			},
-		},
-	}
-
 	deploymentsClient := p.client.AppsV1().Deployments(p.namespace)
 	servicesClient := p.client.CoreV1().Services(p.namespace)
 
 	switch diff.Action {
 	case types.DiffActionCreate:
-		if _, err := deploymentsClient.Create(ctx, deployment, metav1.CreateOptions{}); err != nil {
-			return nil, fmt.Errorf("creating deployment %q: %w", name, err)
-		}
-		if _, err := servicesClient.Create(ctx, svc, metav1.CreateOptions{}); err != nil {
-			return nil, fmt.Errorf("creating service %q: %w", name, err)
+		// Generate a unique name: {prefix}-{random suffix}.
+		actualName := generateK8sName(name)
+
+		labels := map[string]string{
+			"app.kubernetes.io/name":       actualName,
+			"app.kubernetes.io/managed-by": "dcm",
 		}
 
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      actualName,
+				Namespace: p.namespace,
+				Labels:    labels,
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: &replicas,
+				Selector: &metav1.LabelSelector{MatchLabels: labels},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: labels},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Name:  "main",
+							Image: image,
+							Ports: []corev1.ContainerPort{{ContainerPort: port}},
+							Env:   envVars,
+						}},
+					},
+				},
+			},
+		}
+
+		if _, err := deploymentsClient.Create(ctx, deployment, metav1.CreateOptions{}); err != nil {
+			return nil, fmt.Errorf("creating deployment %q: %w", actualName, err)
+		}
+
+		svc := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      actualName,
+				Namespace: p.namespace,
+				Labels:    labels,
+			},
+			Spec: corev1.ServiceSpec{
+				Selector: labels,
+				Ports: []corev1.ServicePort{{
+					Port:       port,
+					TargetPort: intstr.FromInt32(port),
+					Protocol:   corev1.ProtocolTCP,
+				}},
+			},
+		}
+
+		if _, err := servicesClient.Create(ctx, svc, metav1.CreateOptions{}); err != nil {
+			return nil, fmt.Errorf("creating service %q: %w", actualName, err)
+		}
+
+		return &types.Resource{
+			Name:       actualName,
+			Type:       diff.Type,
+			Provider:   p.Name(),
+			Properties: props,
+			Outputs: map[string]interface{}{
+				"url":       fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", actualName, p.namespace, port),
+				"service":   fmt.Sprintf("%s.%s.svc.cluster.local", actualName, p.namespace),
+				"namespace": p.namespace,
+				"port":      port,
+			},
+			Status: types.ResourceStatusReady,
+		}, nil
+
 	case types.DiffActionUpdate:
+		// name is the actual k8s resource name (from previous state).
+		labels := map[string]string{
+			"app.kubernetes.io/name":       name,
+			"app.kubernetes.io/managed-by": "dcm",
+		}
+
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: p.namespace,
+				Labels:    labels,
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: &replicas,
+				Selector: &metav1.LabelSelector{MatchLabels: labels},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: labels},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Name:  "main",
+							Image: image,
+							Ports: []corev1.ContainerPort{{ContainerPort: port}},
+							Env:   envVars,
+						}},
+					},
+				},
+			},
+		}
+
 		if _, err := deploymentsClient.Update(ctx, deployment, metav1.UpdateOptions{}); err != nil {
 			return nil, fmt.Errorf("updating deployment %q: %w", name, err)
 		}
+
+		svc := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: p.namespace,
+				Labels:    labels,
+			},
+			Spec: corev1.ServiceSpec{
+				Selector: labels,
+				Ports: []corev1.ServicePort{{
+					Port:       port,
+					TargetPort: intstr.FromInt32(port),
+					Protocol:   corev1.ProtocolTCP,
+				}},
+			},
+		}
+
 		if _, err := servicesClient.Update(ctx, svc, metav1.UpdateOptions{}); err != nil {
 			return nil, fmt.Errorf("updating service %q: %w", name, err)
 		}
+
+		return &types.Resource{
+			Name:       name,
+			Type:       diff.Type,
+			Provider:   p.Name(),
+			Properties: props,
+			Outputs: map[string]interface{}{
+				"url":       fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", name, p.namespace, port),
+				"service":   fmt.Sprintf("%s.%s.svc.cluster.local", name, p.namespace),
+				"namespace": p.namespace,
+				"port":      port,
+			},
+			Status: types.ResourceStatusReady,
+		}, nil
 	}
 
 	return &types.Resource{
@@ -217,13 +290,7 @@ func (p *Provider) Apply(diff *types.Diff) (*types.Resource, error) {
 		Type:       diff.Type,
 		Provider:   p.Name(),
 		Properties: props,
-		Outputs: map[string]interface{}{
-			"url":       fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", name, p.namespace, port),
-			"service":   fmt.Sprintf("%s.%s.svc.cluster.local", name, p.namespace),
-			"namespace": p.namespace,
-			"port":      port,
-		},
-		Status: types.ResourceStatusReady,
+		Status:     types.ResourceStatusReady,
 	}, nil
 }
 
@@ -280,6 +347,14 @@ func toInt32(v interface{}) int32 {
 	default:
 		return 1
 	}
+}
+
+// generateK8sName creates a unique k8s resource name with a random suffix.
+func generateK8sName(prefix string) string {
+	b := make([]byte, 4)
+	rand.Read(b)
+	suffix := hex.EncodeToString(b)
+	return fmt.Sprintf("%s-%s", prefix, suffix)
 }
 
 func propsEqual(a, b map[string]interface{}) bool {

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/dcm-io/dcm/pkg/policy"
 	"github.com/dcm-io/dcm/pkg/scheduler"
@@ -60,6 +61,8 @@ func (p *Planner) CreatePlan(app *types.Application, currentState *types.State) 
 	if err != nil {
 		return nil, fmt.Errorf("sorting DAG: %w", err)
 	}
+
+	log.Printf("[planner] creating plan for app=%q, %d component(s)", app.Metadata.Name, len(sorted))
 
 	plan := &Plan{
 		AppName: app.Metadata.Name,
@@ -120,7 +123,7 @@ func (p *Planner) CreatePlan(app *types.Application, currentState *types.State) 
 		}
 
 		desired := &types.Resource{
-			Name:        component.Name,
+			Name:        fmt.Sprintf("%s-%s", app.Metadata.Name, component.Name),
 			Type:        resourceType,
 			Provider:    provider.Name(),
 			Environment: envName,
@@ -140,6 +143,9 @@ func (p *Planner) CreatePlan(app *types.Application, currentState *types.State) 
 
 		diff.Environment = envName
 
+		log.Printf("[planner]   component %q: action=%s provider=%s environment=%s",
+			component.Name, diff.Action, diff.Provider, envName)
+
 		plan.Steps = append(plan.Steps, PlanStep{
 			Component:    component.Name,
 			Diff:         diff,
@@ -148,6 +154,7 @@ func (p *Planner) CreatePlan(app *types.Application, currentState *types.State) 
 		})
 	}
 
+	log.Printf("[planner] plan complete: %d step(s)", len(plan.Steps))
 	return plan, nil
 }
 

@@ -1,4 +1,4 @@
-.PHONY: build test clean run-plan run-apply
+.PHONY: build test clean run-plan run-apply serve ui ui-build
 
 BINARY := dcm
 MODULE := github.com/dcm-io/dcm
@@ -23,6 +23,15 @@ run-status: build
 
 run-destroy: build
 	./$(BINARY) destroy -f examples/web-app/app.yaml
+
+serve: build
+	./$(BINARY) serve --addr :8080
+
+ui:
+	cd ui && npm run dev
+
+ui-build:
+	cd ui && npm run build
 
 lint:
 	golangci-lint run ./...

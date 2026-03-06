@@ -1,0 +1,40 @@
+apiVersion: dcm.io/v1
+kind: Application
+metadata:
+  name: my-web-app
+  labels:
+    env: production
+    team: platform
+spec:
+  components:
+    - name: database
+      type: postgres
+      labels:
+        tier: critical
+        data-residency: eu
+      properties:
+        version: "16"
+        storage: 50Gi
+
+    - name: cache
+      type: redis
+      properties:
+        version: "7"
+        maxMemory: 1Gi
+
+    - name: backend
+      type: container
+      dependsOn: [database, cache]
+      properties:
+        image: myapp/backend:latest
+        replicas: 3
+        env:
+          DATABASE_URL: "{{ components.database.outputs.connectionString }}"
+          REDIS_URL: "{{ components.cache.outputs.endpoint }}"
+
+    - name: frontend
+      type: static-site
+      dependsOn: [backend]
+      properties:
+        source: ./frontend
+        apiEndpoint: "{{ components.backend.outputs.url }}"

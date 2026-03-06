@@ -1,0 +1,31 @@
+# Binaries
+dcm
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build output
+/bin/
+/dist/
+
+# State files
+*.dcm.state
+*.dcm.state.backup
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+coverage.out
+coverage.html
+
+# Vendor (use go modules)
+/vendor/

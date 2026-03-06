@@ -1,0 +1,30 @@
+apiVersion: dcm.io/v1
+kind: Policy
+metadata:
+  name: production-placement
+spec:
+  rules:
+    - match:
+        labels:
+          env: production
+          data-residency: eu
+      providers:
+        preferred: [aws-eu-west-1, gcp-europe-west1]
+        forbidden: [aws-us-east-1]
+
+    - match:
+        type: postgres
+        labels:
+          tier: critical
+      providers:
+        preferred: [aws]
+      properties:
+        multiAz: true
+        backupRetention: 30d
+
+    - match:
+        type: container
+        labels:
+          cost: optimize
+      providers:
+        strategy: cheapest

@@ -64,6 +64,17 @@ func (p *Planner) CreatePlan(app *types.Application, currentState *types.State) 
 
 	log.Printf("[planner] creating plan for app=%q, %d component(s)", app.Metadata.Name, len(sorted))
 
+	// Build component name set and validate output references.
+	allComponents := make(map[string]bool, len(sorted))
+	for _, c := range sorted {
+		allComponents[c.Name] = true
+	}
+	for _, c := range sorted {
+		if errs := ValidateReferences(c.Properties, c.Name, c.DependsOn, allComponents); len(errs) > 0 {
+			return nil, fmt.Errorf("invalid references: %w", errs[0])
+		}
+	}
+
 	plan := &Plan{
 		AppName: app.Metadata.Name,
 		Steps:   make([]PlanStep, 0, len(sorted)),

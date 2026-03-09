@@ -26,6 +26,9 @@ func (p *Provider) Capabilities() []types.ResourceType {
 		types.ResourceTypeStaticSite,
 		types.ResourceTypeNetwork,
 		types.ResourceTypeStorage,
+		types.ResourceTypeVM,
+		types.ResourceTypeIP,
+		types.ResourceTypeDNS,
 	}
 }
 
@@ -102,6 +105,24 @@ func generateMockOutputs(rt types.ResourceType, name string) map[string]interfac
 		return map[string]interface{}{
 			"url": fmt.Sprintf("https://%s-mock.local", name),
 			"cdn": fmt.Sprintf("https://cdn.mock.local/%s", name),
+		}
+	case types.ResourceTypeVM:
+		return map[string]interface{}{
+			"vmName":    fmt.Sprintf("%s-mock", name),
+			"namespace": "default",
+			"ip":        "10.0.0.100",
+		}
+	case types.ResourceTypeIP:
+		return map[string]interface{}{
+			"address": "10.0.1.42",
+			"cidr":    "10.0.1.42/24",
+			"pool":    "mock-pool",
+		}
+	case types.ResourceTypeDNS:
+		return map[string]interface{}{
+			"fqdn":  fmt.Sprintf("%s.mock.local", name),
+			"type":  "A",
+			"value": "10.0.1.42",
 		}
 	default:
 		return map[string]interface{}{

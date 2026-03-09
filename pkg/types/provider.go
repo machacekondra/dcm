@@ -10,6 +10,9 @@ const (
 	ResourceTypeStaticSite ResourceType = "static-site"
 	ResourceTypeNetwork    ResourceType = "network"
 	ResourceTypeStorage    ResourceType = "storage"
+	ResourceTypeVM         ResourceType = "vm"
+	ResourceTypeIP         ResourceType = "ip"
+	ResourceTypeDNS        ResourceType = "dns"
 )
 
 // Resource represents a single managed resource and its current state.

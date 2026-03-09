@@ -8,7 +8,10 @@ import (
 	"github.com/dcm-io/dcm/pkg/loader"
 	"github.com/dcm-io/dcm/pkg/policy"
 	"github.com/dcm-io/dcm/pkg/provider"
+	"github.com/dcm-io/dcm/pkg/provider/ipam"
 	k8sprovider "github.com/dcm-io/dcm/pkg/provider/kubernetes"
+	dnsprovider "github.com/dcm-io/dcm/pkg/provider/dns"
+	kvprovider "github.com/dcm-io/dcm/pkg/provider/kubevirt"
 	"github.com/dcm-io/dcm/pkg/provider/mock"
 	"github.com/dcm-io/dcm/pkg/scheduler"
 	"github.com/dcm-io/dcm/pkg/state"
@@ -112,6 +115,41 @@ func buildFactories() *provider.FactoryRegistry {
 			Kubeconfig: kubeconfig,
 			Context:    context,
 			Namespace:  namespace,
+		})
+	})
+
+	// KubeVirt provider factory.
+	factories.Register("kubevirt", func(config map[string]any) (types.Provider, error) {
+		kubeconfig, _ := config["kubeconfig"].(string)
+		context, _ := config["context"].(string)
+		namespace, _ := config["namespace"].(string)
+		return kvprovider.New(kvprovider.Config{
+			Kubeconfig: kubeconfig,
+			Context:    context,
+			Namespace:  namespace,
+		})
+	})
+
+	// Static IPAM provider factory.
+	factories.Register("static-ipam", func(config map[string]any) (types.Provider, error) {
+		pools := make(map[string]string)
+		if p, ok := config["pools"].(map[string]any); ok {
+			for name, cidr := range p {
+				pools[name] = fmt.Sprintf("%v", cidr)
+			}
+		}
+		return ipam.NewStatic(ipam.StaticConfig{Pools: pools})
+	})
+
+	// PowerDNS provider factory.
+	factories.Register("powerdns", func(config map[string]any) (types.Provider, error) {
+		apiURL, _ := config["apiUrl"].(string)
+		apiKey, _ := config["apiKey"].(string)
+		server, _ := config["server"].(string)
+		return dnsprovider.New(dnsprovider.Config{
+			APIURL: apiURL,
+			APIKey: apiKey,
+			Server: server,
 		})
 	})
 

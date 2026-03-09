@@ -45,7 +45,7 @@ import {
 
 // --- Defaults ---
 
-const RESOURCE_TYPES = ['container', 'postgres', 'redis', 'static-site', 'network', 'storage'];
+const RESOURCE_TYPES = ['container', 'vm', 'ip', 'dns', 'postgres', 'redis', 'static-site', 'network', 'storage'];
 const STRATEGIES = ['first', 'round-robin', 'random', 'cheapest', 'least-loaded', 'bin-pack'];
 
 function emptyRule(): RuleDraft {

@@ -41,6 +41,15 @@ func (e *Executor) Execute(plan *Plan, state *types.State) error {
 		log.Printf("[executor]   %s %q (type=%s provider=%s env=%s)",
 			step.Diff.Action, step.Component, step.Diff.Type, step.Diff.Provider, step.Environment)
 
+		// Resolve output references in properties before applying.
+		if step.Diff.After != nil {
+			resolved, err := ResolveReferences(step.Diff.After, state)
+			if err != nil {
+				return fmt.Errorf("resolving references for %s: %w", step.Component, err)
+			}
+			step.Diff.After = resolved
+		}
+
 		switch step.Diff.Action {
 		case types.DiffActionCreate, types.DiffActionUpdate:
 			resource, err := provider.Apply(step.Diff)

@@ -10,14 +10,15 @@ spec:
     - name: database
       type: postgres
       labels:
-        tier: critical
-        data-residency: eu
+        tier: data
       properties:
         version: "16"
         storage: 50Gi
 
     - name: cache
       type: redis
+      labels:
+        tier: data
       properties:
         version: "7"
         maxMemory: 1Gi
@@ -25,16 +26,20 @@ spec:
     - name: backend
       type: container
       dependsOn: [database, cache]
+      labels:
+        tier: backend
       properties:
         image: myapp/backend:latest
         replicas: 3
         env:
-          DATABASE_URL: "{{ components.database.outputs.connectionString }}"
-          REDIS_URL: "{{ components.cache.outputs.endpoint }}"
+          DATABASE_URL: "${database.outputs.connectionString}"
+          REDIS_URL: "${cache.outputs.endpoint}"
 
     - name: frontend
       type: static-site
       dependsOn: [backend]
+      labels:
+        tier: frontend
       properties:
         source: ./frontend
-        apiEndpoint: "{{ components.backend.outputs.url }}"
+        apiEndpoint: "${backend.outputs.url}"

@@ -27,7 +27,7 @@ func builtinTypeSchemas(providerNames []string) []TypeSchema {
 	// Helper to find which providers support a type.
 	// For now we use known mappings; later this could be dynamic.
 	mockOnly := filterProviders(providerNames, "mock")
-	allProviders := filterProviders(providerNames, "kubernetes", "mock")
+	allProviders := filterProviders(providerNames, "kubernetes", "kubevirt", "mock")
 
 	return []TypeSchema{
 		{
@@ -86,6 +86,42 @@ func builtinTypeSchemas(providerNames []string) []TypeSchema {
 				{Name: "size", Type: "string", Default: "10Gi", Description: "Storage size"},
 				{Name: "storageClass", Type: "string", Default: "standard", Description: "Storage class"},
 				{Name: "accessMode", Type: "string", Default: "ReadWriteOnce", Description: "Access mode"},
+			},
+		},
+		{
+			Type:        "ip",
+			Description: "IP address reservation (IPAM)",
+			Providers:   filterProviders(providerNames, "static-ipam", "mock"),
+			Properties: []PropertySchema{
+				{Name: "pool", Type: "string", Required: true, Description: "IPAM pool or subnet name"},
+				{Name: "version", Type: "string", Default: "4", Description: "IP version: 4 or 6"},
+				{Name: "attachTo", Type: "string", Description: "Resource to bind the IP to (output reference)"},
+			},
+		},
+		{
+			Type:        "dns",
+			Description: "DNS record management",
+			Providers:   filterProviders(providerNames, "powerdns", "mock"),
+			Properties: []PropertySchema{
+				{Name: "zone", Type: "string", Required: true, Description: "DNS zone (e.g. example.com)"},
+				{Name: "record", Type: "string", Required: true, Description: "FQDN (e.g. web.example.com)"},
+				{Name: "type", Type: "string", Required: true, Description: "Record type: A, AAAA, CNAME"},
+				{Name: "value", Type: "string", Required: true, Description: "Record value (IP or hostname, supports output references)"},
+				{Name: "ttl", Type: "number", Default: 300, Description: "TTL in seconds"},
+			},
+		},
+		{
+			Type:        "vm",
+			Description: "Virtual machine (KubeVirt VirtualMachine)",
+			Providers:   filterProviders(providerNames, "kubevirt", "mock"),
+			Properties: []PropertySchema{
+				{Name: "image", Type: "string", Required: true, Description: "VM disk image (container disk image reference)"},
+				{Name: "cpu", Type: "number", Default: 1, Description: "Number of vCPUs"},
+				{Name: "memoryMB", Type: "number", Default: 1024, Description: "Memory in MB"},
+				{Name: "memory", Type: "string", Description: "Memory with unit (e.g. 2Gi) — overrides memoryMB"},
+				{Name: "userData", Type: "string", Description: "Cloud-init user data"},
+				{Name: "sshKey", Type: "string", Description: "SSH public key for access"},
+				{Name: "network", Type: "string", Description: "Network name (Multus). Default: pod network"},
 			},
 		},
 	}

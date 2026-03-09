@@ -32,6 +32,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
+	seedSampleData(db)
+
 	reg, err := buildRegistryFromDB(db)
 	if err != nil {
 		return fmt.Errorf("building registry: %w", err)

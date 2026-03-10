@@ -44,11 +44,14 @@ func builtinTypeSchemas(providerNames []string) []TypeSchema {
 		{
 			Type:        "postgres",
 			Description: "PostgreSQL database instance",
-			Providers:   mockOnly,
+			Providers:   filterProviders(providerNames, "postgres", "mock"),
 			Properties: []PropertySchema{
-				{Name: "version", Type: "string", Default: "15", Description: "PostgreSQL version"},
+				{Name: "version", Type: "string", Default: "16", Description: "PostgreSQL version"},
 				{Name: "maxConnections", Type: "number", Default: 100, Description: "Maximum connections"},
-				{Name: "storage", Type: "string", Default: "10Gi", Description: "Storage size"},
+				{Name: "storage", Type: "string", Default: "1Gi", Description: "Storage size (PVC)"},
+				{Name: "database", Type: "string", Default: "app", Description: "Database name to create"},
+				{Name: "username", Type: "string", Default: "postgres", Description: "Database user"},
+				{Name: "password", Type: "string", Default: "postgres", Description: "Database password"},
 			},
 		},
 		{

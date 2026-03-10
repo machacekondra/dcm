@@ -12,6 +12,7 @@ import (
 	k8sprovider "github.com/dcm-io/dcm/pkg/provider/kubernetes"
 	dnsprovider "github.com/dcm-io/dcm/pkg/provider/dns"
 	kvprovider "github.com/dcm-io/dcm/pkg/provider/kubevirt"
+	pgprovider "github.com/dcm-io/dcm/pkg/provider/postgres"
 	"github.com/dcm-io/dcm/pkg/provider/mock"
 	"github.com/dcm-io/dcm/pkg/scheduler"
 	"github.com/dcm-io/dcm/pkg/state"
@@ -150,6 +151,18 @@ func buildFactories() *provider.FactoryRegistry {
 			APIURL: apiURL,
 			APIKey: apiKey,
 			Server: server,
+		})
+	})
+
+	// PostgreSQL provider factory (deploys on Kubernetes).
+	factories.Register("postgres", func(config map[string]any) (types.Provider, error) {
+		kubeconfig, _ := config["kubeconfig"].(string)
+		context, _ := config["context"].(string)
+		namespace, _ := config["namespace"].(string)
+		return pgprovider.New(pgprovider.Config{
+			Kubeconfig: kubeconfig,
+			Context:    context,
+			Namespace:  namespace,
 		})
 	})
 

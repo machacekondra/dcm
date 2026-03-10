@@ -12,7 +12,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var serveAddr string
+var (
+	serveAddr string
+	dataDir   string
+)
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
@@ -22,6 +25,7 @@ var serveCmd = &cobra.Command{
 
 func init() {
 	serveCmd.Flags().StringVar(&serveAddr, "addr", ":8080", "Address to listen on")
+	serveCmd.Flags().StringVar(&dataDir, "data-dir", "data", "Directory with seed YAML files")
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -32,7 +36,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
-	seedSampleData(db)
+	seedFromDataDir(db, dataDir)
 
 	reg, err := buildRegistryFromDB(db)
 	if err != nil {

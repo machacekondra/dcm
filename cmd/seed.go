@@ -3,135 +3,159 @@ package cmd
 import (
 	"encoding/json"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/dcm-io/dcm/pkg/store"
 	"github.com/dcm-io/dcm/pkg/types"
+	"gopkg.in/yaml.v3"
 )
 
-// seedSampleData creates sample applications, environments, and policies
-// if they don't already exist. This provides a useful starting point
-// for new users exploring the UI.
-func seedSampleData(db *store.Store) {
-	seedSampleEnvironments(db)
-	seedPetclinicApp(db)
-}
-
-func seedPetclinicApp(db *store.Store) {
-	const name = "spring-petclinic"
-
-	if _, err := db.GetApplication(name); err == nil {
-		return // already exists
-	}
-
-	components := []types.Component{
-		{
-			Name:     "database",
-			Type:     "postgres",
-			Requires: []string{"persistent-storage"},
-			Labels: map[string]string{
-				"tier": "data",
-			},
-			ColocateWith: "app",
-			Properties: map[string]any{
-				"version":        "16",
-				"storage":        "20Gi",
-				"maxConnections": 200,
-			},
-		},
-		{
-			Name:      "app",
-			Type:      "container",
-			DependsOn: []string{"database", "cache"},
-			Requires:  []string{"loadbalancer"},
-			Labels: map[string]string{
-				"tier": "backend",
-			},
-			Properties: map[string]any{
-				"image":    "springcommunity/spring-petclinic:latest",
-				"replicas": 2,
-				"port":     8080,
-				"env": map[string]any{
-					"SPRING_PROFILES_ACTIVE":                    "postgres",
-					"SPRING_DATASOURCE_URL":                     "${database.outputs.connectionString}",
-					"SPRING_DATASOURCE_USERNAME":                "petclinic",
-					"SPRING_DATASOURCE_PASSWORD":                "petclinic",
-					"SPRING_CACHE_TYPE":                         "redis",
-					"SPRING_DATA_REDIS_HOST":                    "${cache.outputs.host}",
-					"SPRING_DATA_REDIS_PORT":                    "${cache.outputs.port}",
-					"MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE": "health,info,prometheus",
-				},
-			},
-		},
-		{
-			Name:         "app-ip",
-			Type:         "ip",
-			DependsOn:    []string{"app"},
-			Requires:     []string{"loadbalancer"},
-			ColocateWith: "app",
-			Labels: map[string]string{
-				"tier": "network",
-			},
-			Properties: map[string]any{
-				"pool": "production",
-			},
-		},
-		{
-			Name:      "app-dns",
-			Type:      "dns",
-			DependsOn: []string{"app-ip"},
-			Labels: map[string]string{
-				"tier": "network",
-			},
-			Properties: map[string]any{
-				"zone":   "example.com",
-				"record": "petclinic.example.com",
-				"type":   "A",
-				"value":  "${app-ip.outputs.address}",
-				"ttl":    300,
-			},
-		},
-	}
-
-	componentsJSON, _ := json.Marshal(components)
-	rec := &store.ApplicationRecord{
-		Name: name,
-		Labels: map[string]string{
-			"framework": "spring-boot",
-			"team":      "platform",
-		},
-		Components: componentsJSON,
-	}
-
-	if err := db.CreateApplication(rec); err != nil {
-		log.Printf("seed: failed to create %s: %v", name, err)
+// seedFromDataDir loads YAML files from the given directory and seeds
+// applications, environments, and policies that don't already exist.
+func seedFromDataDir(db *store.Store, dataDir string) {
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Printf("seed: data directory %s not found, skipping", dataDir)
+			return
+		}
+		log.Printf("seed: failed to read data directory %s: %v", dataDir, err)
 		return
 	}
-	log.Printf("seed: created sample application %q (3-tier web app with IP/DNS)", name)
+
+	for _, entry := range entries {
+		if entry.IsDir() || !isYAML(entry.Name()) {
+			continue
+		}
+		path := filepath.Join(dataDir, entry.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Printf("seed: failed to read %s: %v", path, err)
+			continue
+		}
+		if err := seedFile(db, path, data); err != nil {
+			log.Printf("seed: %s: %v", path, err)
+		}
+	}
 }
 
-func seedSampleEnvironments(db *store.Store) {
-	envs := []store.EnvironmentRecord{
-		{
-			Name:     "dev-cluster",
-			Provider: "mock",
-			Labels: map[string]string{
-				"env":    "development",
-				"region": "us-east-1",
-			},
-			Capabilities: []string{"loadbalancer", "persistent-storage"},
-			Config:       map[string]any{},
-			Status:       "active",
-		},
+func isYAML(name string) bool {
+	return strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml")
+}
+
+// header is used to peek at the Kind field before full unmarshalling.
+type header struct {
+	Kind string `yaml:"kind"`
+}
+
+func seedFile(db *store.Store, path string, data []byte) error {
+	var h header
+	if err := yaml.Unmarshal(data, &h); err != nil {
+		return err
 	}
 
-	for _, env := range envs {
-		if _, err := db.GetEnvironment(env.Name); err == nil {
-			continue
-		}
-		if err := db.CreateEnvironment(&env); err != nil {
-			log.Printf("seed: failed to create environment %s: %v", env.Name, err)
-			continue
-		}
-		log.Printf("seed: created sample environment %q (capabilities: %v)", env.Name, env.Capabilities)
+	switch h.Kind {
+	case "Application":
+		return seedApplication(db, path, data)
+	case "Environment":
+		return seedEnvironment(db, path, data)
+	case "Policy":
+		return seedPolicy(db, path, data)
+	default:
+		log.Printf("seed: %s: unknown kind %q, skipping", path, h.Kind)
+		return nil
 	}
+}
+
+func seedApplication(db *store.Store, path string, data []byte) error {
+	var app types.Application
+	if err := yaml.Unmarshal(data, &app); err != nil {
+		return err
+	}
+
+	name := app.Metadata.Name
+	if _, err := db.GetApplication(name); err == nil {
+		return nil // already exists
+	}
+
+	componentsJSON, err := json.Marshal(app.Spec.Components)
+	if err != nil {
+		return err
+	}
+
+	rec := &store.ApplicationRecord{
+		Name:       name,
+		Labels:     app.Metadata.Labels,
+		Components: componentsJSON,
+	}
+	if err := db.CreateApplication(rec); err != nil {
+		return err
+	}
+	log.Printf("seed: created application %q from %s", name, filepath.Base(path))
+	return nil
+}
+
+func seedEnvironment(db *store.Store, path string, data []byte) error {
+	var env types.Environment
+	if err := yaml.Unmarshal(data, &env); err != nil {
+		return err
+	}
+
+	name := env.Metadata.Name
+	if _, err := db.GetEnvironment(name); err == nil {
+		return nil // already exists
+	}
+
+	rec := &store.EnvironmentRecord{
+		Name:         name,
+		Provider:     env.Spec.Provider,
+		Labels:       env.Metadata.Labels,
+		Capabilities: env.Spec.Capabilities,
+		Config:       env.Spec.Config,
+		Status:       "active",
+	}
+
+	if env.Spec.Resources != nil {
+		j, _ := json.Marshal(env.Spec.Resources)
+		rec.Resources = j
+	}
+	if env.Spec.Cost != nil {
+		j, _ := json.Marshal(env.Spec.Cost)
+		rec.Cost = j
+	}
+
+	if err := db.CreateEnvironment(rec); err != nil {
+		return err
+	}
+	log.Printf("seed: created environment %q from %s", name, filepath.Base(path))
+	return nil
+}
+
+func seedPolicy(db *store.Store, path string, data []byte) error {
+	var pol types.Policy
+	if err := yaml.Unmarshal(data, &pol); err != nil {
+		return err
+	}
+
+	name := pol.Metadata.Name
+	if _, err := db.GetPolicy(name); err == nil {
+		return nil // already exists
+	}
+
+	rulesJSON, err := json.Marshal(pol.Spec.Rules)
+	if err != nil {
+		return err
+	}
+
+	rec := &store.PolicyRecord{
+		Name:  name,
+		Rules: rulesJSON,
+	}
+	if err := db.CreatePolicy(rec); err != nil {
+		return err
+	}
+	log.Printf("seed: created policy %q from %s", name, filepath.Base(path))
+	return nil
 }

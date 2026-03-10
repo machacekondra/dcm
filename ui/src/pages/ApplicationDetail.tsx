@@ -8,6 +8,8 @@ import {
   Card,
   CardBody,
   CardTitle,
+  ClipboardCopy,
+  ClipboardCopyVariant,
   Content,
   DescriptionList,
   DescriptionListDescription,
@@ -17,17 +19,45 @@ import {
   FlexItem,
   Label,
   LabelGroup,
+  Modal,
+  ModalBody,
+  ModalHeader,
   PageSection,
   Spinner,
 } from '@patternfly/react-core';
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
+import yaml from 'js-yaml';
 import { applications, type ApplicationRecord } from '../api/client';
+
+function appToYaml(app: ApplicationRecord): string {
+  const doc = {
+    apiVersion: 'dcm.io/v1',
+    kind: 'Application',
+    metadata: {
+      name: app.name,
+      ...(app.labels && Object.keys(app.labels).length > 0 ? { labels: app.labels } : {}),
+    },
+    spec: {
+      components: app.components.map(c => {
+        const comp: Record<string, unknown> = { name: c.name, type: c.type };
+        if (c.dependsOn?.length) comp.dependsOn = c.dependsOn;
+        if (c.requires?.length) comp.requires = c.requires;
+        if (c.colocateWith) comp.colocateWith = c.colocateWith;
+        if (c.labels && Object.keys(c.labels).length > 0) comp.labels = c.labels;
+        if (c.properties && Object.keys(c.properties).length > 0) comp.properties = c.properties;
+        return comp;
+      }),
+    },
+  };
+  return yaml.dump(doc, { lineWidth: -1, noRefs: true, quotingType: '"' });
+}
 
 export default function ApplicationDetail() {
   const { name } = useParams<{ name: string }>();
   const navigate = useNavigate();
   const [app, setApp] = useState<ApplicationRecord | null>(null);
   const [error, setError] = useState('');
+  const [showYaml, setShowYaml] = useState(false);
 
   const load = useCallback(() => {
     if (!name) return;
@@ -72,6 +102,7 @@ export default function ApplicationDetail() {
             <Content component="h1">{app.name}</Content>
           </FlexItem>
           <FlexItem>
+            <Button variant="secondary" onClick={() => setShowYaml(true)} style={{ marginRight: 8 }}>View YAML</Button>
             <Button variant="secondary" onClick={() => navigate(`/applications/${name}/edit`)} style={{ marginRight: 8 }}>Edit</Button>
             <Button variant="danger" onClick={handleDelete}>Delete</Button>
           </FlexItem>
@@ -144,6 +175,22 @@ export default function ApplicationDetail() {
         </CardBody>
       </Card>
     </PageSection>
+
+      <Modal isOpen={showYaml} onClose={() => setShowYaml(false)} variant="large">
+        <ModalHeader title={`${app.name} — YAML`} />
+        <ModalBody>
+          <ClipboardCopy
+            isCode
+            isReadOnly
+            variant={ClipboardCopyVariant.expansion}
+            hoverTip="Copy"
+            clickTip="Copied"
+            style={{ fontFamily: 'monospace', fontSize: 13, whiteSpace: 'pre' }}
+          >
+            {appToYaml(app)}
+          </ClipboardCopy>
+        </ModalBody>
+      </Modal>
     </>
   );
 }

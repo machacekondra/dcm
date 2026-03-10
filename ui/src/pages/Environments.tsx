@@ -77,6 +77,7 @@ export default function Environments() {
               <Tr>
                 <Th>Name</Th>
                 <Th>Provider</Th>
+                <Th>Capabilities</Th>
                 <Th>Labels</Th>
                 <Th>Resources</Th>
                 <Th>Cost</Th>
@@ -89,6 +90,15 @@ export default function Environments() {
                 <Tr key={env.name}>
                   <Td dataLabel="Name"><strong>{env.name}</strong></Td>
                   <Td dataLabel="Provider"><Label isCompact color="blue">{env.provider}</Label></Td>
+                  <Td dataLabel="Capabilities">
+                    {env.capabilities && env.capabilities.length > 0 ? (
+                      <LabelGroup>
+                        {env.capabilities.map(cap => (
+                          <Label key={cap} isCompact color="purple">{cap}</Label>
+                        ))}
+                      </LabelGroup>
+                    ) : '—'}
+                  </Td>
                   <Td dataLabel="Labels">
                     {env.labels && Object.keys(env.labels).length > 0 ? (
                       <LabelGroup>
@@ -129,6 +139,7 @@ function CreateEnvironmentModal({ isOpen, onClose, onCreated }: { isOpen: boolea
   const [name, setName] = useState('');
   const [provider, setProvider] = useState('');
   const [labelsStr, setLabelsStr] = useState('');
+  const [capsStr, setCapsStr] = useState('');
   const [configStr, setConfigStr] = useState('{}');
   const [cpu, setCpu] = useState('');
   const [memory, setMemory] = useState('');
@@ -146,6 +157,7 @@ function CreateEnvironmentModal({ isOpen, onClose, onCreated }: { isOpen: boolea
       if (labelsStr.trim()) {
         labels = JSON.parse(labelsStr);
       }
+      const capabilities = capsStr.trim() ? capsStr.split(',').map(s => s.trim()).filter(Boolean) : undefined;
       const config = JSON.parse(configStr);
       const resources = cpu || memory || pods ? {
         cpu: parseInt(cpu) || 0,
@@ -157,10 +169,11 @@ function CreateEnvironmentModal({ isOpen, onClose, onCreated }: { isOpen: boolea
         hourlyRate: parseFloat(costRate) || 0,
       } : undefined;
 
-      await environments.create({ name, provider, labels, config, resources, cost });
+      await environments.create({ name, provider, labels, capabilities, config, resources, cost });
       setName('');
       setProvider('');
       setLabelsStr('');
+      setCapsStr('');
       setConfigStr('{}');
       setCpu(''); setMemory(''); setPods('');
       setCostTier(''); setCostRate('');
@@ -183,6 +196,9 @@ function CreateEnvironmentModal({ isOpen, onClose, onCreated }: { isOpen: boolea
         </FormGroup>
         <FormGroup label="Provider type" isRequired fieldId="env-provider" style={{ marginTop: 16 }}>
           <TextInput id="env-provider" value={provider} onChange={(_e, v) => setProvider(v)} placeholder="kubernetes" />
+        </FormGroup>
+        <FormGroup label="Capabilities (comma-separated)" fieldId="env-caps" style={{ marginTop: 16 }}>
+          <TextInput id="env-caps" value={capsStr} onChange={(_e, v) => setCapsStr(v)} placeholder="loadbalancer, persistent-storage, gpu" />
         </FormGroup>
         <FormGroup label="Labels (JSON)" fieldId="env-labels" style={{ marginTop: 16 }}>
           <TextInput id="env-labels" value={labelsStr} onChange={(_e, v) => setLabelsStr(v)} placeholder='{"region": "eu-west-1"}' />
@@ -217,6 +233,7 @@ function CreateEnvironmentModal({ isOpen, onClose, onCreated }: { isOpen: boolea
 function EditEnvironmentModal({ env, onClose, onSaved }: { env: EnvironmentRecord | null; onClose: () => void; onSaved: () => void }) {
   const [provider, setProvider] = useState('');
   const [labelsStr, setLabelsStr] = useState('');
+  const [capsStr, setCapsStr] = useState('');
   const [configStr, setConfigStr] = useState('{}');
   const [cpu, setCpu] = useState('');
   const [memory, setMemory] = useState('');
@@ -230,6 +247,7 @@ function EditEnvironmentModal({ env, onClose, onSaved }: { env: EnvironmentRecor
     if (env) {
       setProvider(env.provider);
       setLabelsStr(env.labels && Object.keys(env.labels).length > 0 ? JSON.stringify(env.labels) : '');
+      setCapsStr(env.capabilities?.join(', ') ?? '');
       setConfigStr(env.config && Object.keys(env.config).length > 0 ? JSON.stringify(env.config, null, 2) : '{}');
       setCpu(env.resources?.cpu?.toString() ?? '');
       setMemory(env.resources?.memory?.toString() ?? '');
@@ -247,6 +265,7 @@ function EditEnvironmentModal({ env, onClose, onSaved }: { env: EnvironmentRecor
     try {
       let labels: Record<string, string> | undefined;
       if (labelsStr.trim()) labels = JSON.parse(labelsStr);
+      const capabilities = capsStr.trim() ? capsStr.split(',').map(s => s.trim()).filter(Boolean) : undefined;
       const config = JSON.parse(configStr);
       const resources = cpu || memory || pods ? {
         cpu: parseInt(cpu) || 0, memory: parseInt(memory) || 0, pods: parseInt(pods) || 0,
@@ -255,7 +274,7 @@ function EditEnvironmentModal({ env, onClose, onSaved }: { env: EnvironmentRecor
         tier: costTier || 'standard', hourlyRate: parseFloat(costRate) || 0,
       } : undefined;
 
-      await environments.update(env.name, { provider, labels, config, resources, cost });
+      await environments.update(env.name, { provider, labels, capabilities, config, resources, cost });
       onClose();
       onSaved();
     } catch (e: unknown) {
@@ -275,6 +294,9 @@ function EditEnvironmentModal({ env, onClose, onSaved }: { env: EnvironmentRecor
         </FormGroup>
         <FormGroup label="Provider type" isRequired fieldId="edit-env-provider" style={{ marginTop: 16 }}>
           <TextInput id="edit-env-provider" value={provider} onChange={(_e, v) => setProvider(v)} />
+        </FormGroup>
+        <FormGroup label="Capabilities (comma-separated)" fieldId="edit-env-caps" style={{ marginTop: 16 }}>
+          <TextInput id="edit-env-caps" value={capsStr} onChange={(_e, v) => setCapsStr(v)} placeholder="loadbalancer, persistent-storage, gpu" />
         </FormGroup>
         <FormGroup label="Labels (JSON)" fieldId="edit-env-labels" style={{ marginTop: 16 }}>
           <TextInput id="edit-env-labels" value={labelsStr} onChange={(_e, v) => setLabelsStr(v)} placeholder='{"region": "eu-west-1"}' />

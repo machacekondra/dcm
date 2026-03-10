@@ -78,8 +78,9 @@ func storeEnvToType(rec store.EnvironmentRecord) types.Environment {
 			Labels: rec.Labels,
 		},
 		Spec: types.EnvironmentSpec{
-			Provider: rec.Provider,
-			Config:   rec.Config,
+			Provider:     rec.Provider,
+			Capabilities: rec.Capabilities,
+			Config:       rec.Config,
 		},
 	}
 	if rec.Resources != nil {

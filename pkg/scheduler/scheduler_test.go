@@ -1220,6 +1220,93 @@ func TestSchedule_RoundRobinStrategy(t *testing.T) {
 	}
 }
 
+// makeEnvWithCaps creates an environment with capabilities.
+func makeEnvWithCaps(name, providerType string, caps []string) types.Environment {
+	return types.Environment{
+		Metadata: types.Metadata{Name: name},
+		Spec: types.EnvironmentSpec{
+			Provider:     providerType,
+			Capabilities: caps,
+		},
+	}
+}
+
+func TestSchedule_RequirementsFilter(t *testing.T) {
+	reg := testRegistry(
+		testEnv{
+			env:          makeEnvWithCaps("prod-k8s", "kubernetes", []string{"loadbalancer", "persistent-storage"}),
+			capabilities: []types.ResourceType{"container", "ip"},
+		},
+		testEnv{
+			env:          makeEnvWithCaps("dev-k8s", "kubernetes", []string{"persistent-storage"}),
+			capabilities: []types.ResourceType{"container", "ip"},
+		},
+	)
+
+	s := mustScheduler(t, reg, nil)
+
+	t.Run("component requiring loadbalancer gets prod-k8s", func(t *testing.T) {
+		comp := &types.Component{
+			Name:     "app",
+			Type:     "container",
+			Requires: []string{"loadbalancer"},
+		}
+		app := makeApp("myapp", nil)
+
+		result, err := s.Schedule(comp, app)
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+		if result.Environment != "prod-k8s" {
+			t.Errorf("expected prod-k8s (only env with loadbalancer), got %q", result.Environment)
+		}
+	})
+
+	t.Run("component requiring both capabilities gets prod-k8s", func(t *testing.T) {
+		comp := &types.Component{
+			Name:     "app",
+			Type:     "container",
+			Requires: []string{"loadbalancer", "persistent-storage"},
+		}
+		app := makeApp("myapp", nil)
+
+		result, err := s.Schedule(comp, app)
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+		if result.Environment != "prod-k8s" {
+			t.Errorf("expected prod-k8s, got %q", result.Environment)
+		}
+	})
+
+	t.Run("component requiring unavailable capability fails", func(t *testing.T) {
+		comp := &types.Component{
+			Name:     "ml",
+			Type:     "container",
+			Requires: []string{"gpu"},
+		}
+		app := makeApp("myapp", nil)
+
+		_, err := s.Schedule(comp, app)
+		if err == nil {
+			t.Fatal("expected error for unsatisfiable requirement")
+		}
+	})
+
+	t.Run("component with no requirements gets any env", func(t *testing.T) {
+		comp := makeComponent("web", "container", nil)
+		app := makeApp("myapp", nil)
+
+		result, err := s.Schedule(comp, app)
+		if err != nil {
+			t.Fatalf("Schedule: %v", err)
+		}
+		if result.Environment != "prod-k8s" && result.Environment != "dev-k8s" {
+			t.Errorf("expected any env, got %q", result.Environment)
+		}
+	})
+}
+
 func TestSchedule_UnknownStrategy(t *testing.T) {
 	reg := testRegistry(
 		testEnv{

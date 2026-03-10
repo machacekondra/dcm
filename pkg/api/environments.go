@@ -9,12 +9,13 @@ import (
 )
 
 type createEnvironmentRequest struct {
-	Name      string              `json:"name"`
-	Provider  string              `json:"provider"`
-	Labels    map[string]string   `json:"labels,omitempty"`
-	Config    map[string]any      `json:"config,omitempty"`
-	Resources *types.ResourcePool `json:"resources,omitempty"`
-	Cost      *types.CostInfo     `json:"cost,omitempty"`
+	Name         string              `json:"name"`
+	Provider     string              `json:"provider"`
+	Labels       map[string]string   `json:"labels,omitempty"`
+	Capabilities []string            `json:"capabilities,omitempty"`
+	Config       map[string]any      `json:"config,omitempty"`
+	Resources    *types.ResourcePool `json:"resources,omitempty"`
+	Cost         *types.CostInfo     `json:"cost,omitempty"`
 }
 
 func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request) {
@@ -44,13 +45,14 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 	}
 
 	rec := &store.EnvironmentRecord{
-		Name:      req.Name,
-		Provider:  req.Provider,
-		Labels:    req.Labels,
-		Config:    req.Config,
-		Resources: resources,
-		Cost:      cost,
-		Status:    "active",
+		Name:         req.Name,
+		Provider:     req.Provider,
+		Labels:       req.Labels,
+		Capabilities: req.Capabilities,
+		Config:       req.Config,
+		Resources:    resources,
+		Cost:         cost,
+		Status:       "active",
 	}
 
 	if err := s.store.CreateEnvironment(rec); err != nil {
@@ -108,13 +110,14 @@ func (s *Server) handleUpdateEnvironment(w http.ResponseWriter, r *http.Request)
 	}
 
 	rec := &store.EnvironmentRecord{
-		Name:      name,
-		Provider:  req.Provider,
-		Labels:    req.Labels,
-		Config:    req.Config,
-		Resources: resources,
-		Cost:      cost,
-		Status:    "active",
+		Name:         name,
+		Provider:     req.Provider,
+		Labels:       req.Labels,
+		Capabilities: req.Capabilities,
+		Config:       req.Config,
+		Resources:    resources,
+		Cost:         cost,
+		Status:       "active",
 	}
 
 	if err := s.store.UpdateEnvironment(rec); err != nil {

@@ -75,6 +75,32 @@ func (p *Planner) CreatePlan(app *types.Application, currentState *types.State) 
 		}
 	}
 
+	// Build placement groups and pre-assign environments for co-located components.
+	envAssignments := make(map[string]string) // component name -> environment name
+	if p.scheduler != nil {
+		groups, err := BuildPlacementGroups(sorted)
+		if err != nil {
+			return nil, fmt.Errorf("building placement groups: %w", err)
+		}
+
+		for _, g := range groups {
+			if len(g.Requirements) > 0 || len(g.Components) > 1 {
+				envName, err := p.scheduler.ScheduleGroup(g.Components, g.Requirements, app)
+				if err != nil {
+					names := make([]string, len(g.Components))
+					for i, c := range g.Components {
+						names[i] = c.Name
+					}
+					return nil, fmt.Errorf("scheduling placement group %v (requires %v): %w",
+						names, g.Requirements, err)
+				}
+				for _, c := range g.Components {
+					envAssignments[c.Name] = envName
+				}
+			}
+		}
+	}
+
 	plan := &Plan{
 		AppName: app.Metadata.Name,
 		Steps:   make([]PlanStep, 0, len(sorted)),
@@ -89,15 +115,22 @@ func (p *Planner) CreatePlan(app *types.Application, currentState *types.State) 
 		var envName string
 
 		if p.scheduler != nil {
+			// Check if this component was pre-assigned via placement group.
+			if assigned, ok := envAssignments[component.Name]; ok {
+				envName = assigned
+			}
+
 			// Use scheduler for environment-aware selection.
-			result, err := p.scheduler.Schedule(component, app)
+			result, err := p.scheduler.ScheduleWithRequirements(component, app, component.Requires)
 			if err != nil {
 				return nil, fmt.Errorf("scheduling %s: %w", component.Name, err)
 			}
 
 			provider = result.Provider
 			matchedRules = result.MatchedRules
-			envName = result.Environment
+			if envName == "" {
+				envName = result.Environment
+			}
 
 			// Merge policy-injected properties (component properties take precedence).
 			for k, v := range result.Properties {

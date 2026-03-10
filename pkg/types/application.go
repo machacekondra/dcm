@@ -14,11 +14,13 @@ type ApplicationSpec struct {
 
 // Component is a single deployable unit within an application.
 type Component struct {
-	Name       string                 `yaml:"name" json:"name"`
-	Type       string                 `yaml:"type" json:"type"`
-	DependsOn  []string               `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty"`
-	Labels     map[string]string      `yaml:"labels,omitempty" json:"labels,omitempty"`
-	Properties map[string]interface{} `yaml:"properties,omitempty" json:"properties,omitempty"`
+	Name         string                 `yaml:"name" json:"name"`
+	Type         string                 `yaml:"type" json:"type"`
+	DependsOn    []string               `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty"`
+	Requires     []string               `yaml:"requires,omitempty" json:"requires,omitempty"`
+	ColocateWith string                 `yaml:"colocateWith,omitempty" json:"colocateWith,omitempty"`
+	Labels       map[string]string      `yaml:"labels,omitempty" json:"labels,omitempty"`
+	Properties   map[string]interface{} `yaml:"properties,omitempty" json:"properties,omitempty"`
 }
 
 type Metadata struct {

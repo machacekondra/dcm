@@ -49,14 +49,30 @@ type ScheduleResult struct {
 
 // Schedule selects the best environment for a component.
 func (s *Scheduler) Schedule(component *types.Component, app *types.Application) (*ScheduleResult, error) {
+	return s.ScheduleWithRequirements(component, app, component.Requires)
+}
+
+// ScheduleWithRequirements selects the best environment for a component,
+// filtering candidates to those that have all the given required capabilities.
+func (s *Scheduler) ScheduleWithRequirements(component *types.Component, app *types.Application, requirements []string) (*ScheduleResult, error) {
 	resourceType := types.ResourceType(component.Type)
-	log.Printf("[scheduler] scheduling component %q (type=%s)", component.Name, component.Type)
+	log.Printf("[scheduler] scheduling component %q (type=%s, requires=%v)", component.Name, component.Type, requirements)
 
 	// Start with all environments that support the component's resource type.
 	candidates := s.registry.ListByCapability(resourceType)
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("no environment supports resource type %q", component.Type)
 	}
+
+	// Filter by required capabilities.
+	if len(requirements) > 0 {
+		candidates = filterByCapabilities(candidates, requirements)
+		if len(candidates) == 0 {
+			return nil, fmt.Errorf("no environment provides %v for component %q (type %s)",
+				requirements, component.Name, component.Type)
+		}
+	}
+
 	log.Printf("[scheduler]   %d candidate environment(s) for type %q: %v",
 		len(candidates), component.Type, envNames(candidates))
 
@@ -365,13 +381,63 @@ func buildEnvironmentCELMap(e *EnvironmentInstance) map[string]any {
 		cost["hourlyRate"] = e.Env.Spec.Cost.HourlyRate
 	}
 
-	return map[string]any{
-		"name":      e.Env.Metadata.Name,
-		"provider":  e.Env.Spec.Provider,
-		"labels":    labels,
-		"resources": resources,
-		"cost":      cost,
+	caps := make([]any, len(e.Env.Spec.Capabilities))
+	for i, c := range e.Env.Spec.Capabilities {
+		caps[i] = c
 	}
+
+	return map[string]any{
+		"name":         e.Env.Metadata.Name,
+		"provider":     e.Env.Spec.Provider,
+		"labels":       labels,
+		"capabilities": caps,
+		"resources":    resources,
+		"cost":         cost,
+	}
+}
+
+// filterByCapabilities keeps only environments whose Capabilities list
+// contains all of the required capability strings.
+func filterByCapabilities(candidates []*EnvironmentInstance, requirements []string) []*EnvironmentInstance {
+	var filtered []*EnvironmentInstance
+	for _, c := range candidates {
+		if hasAll(c.Env.Spec.Capabilities, requirements) {
+			filtered = append(filtered, c)
+		}
+	}
+	return filtered
+}
+
+func hasAll(capabilities, requirements []string) bool {
+	for _, req := range requirements {
+		found := false
+		for _, cap := range capabilities {
+			if cap == req {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+// ScheduleGroup selects one environment for a set of resource types that must
+// be co-located, using the merged requirements of the entire placement group.
+// It returns the first successful Schedule result using the chosen environment.
+func (s *Scheduler) ScheduleGroup(components []*types.Component, requirements []string, app *types.Application) (string, error) {
+	if len(components) == 0 {
+		return "", fmt.Errorf("empty placement group")
+	}
+
+	// Use the first component to select the environment, but with merged requirements.
+	result, err := s.ScheduleWithRequirements(components[0], app, requirements)
+	if err != nil {
+		return "", err
+	}
+	return result.Environment, nil
 }
 
 func envNames(envs []*EnvironmentInstance) []string {

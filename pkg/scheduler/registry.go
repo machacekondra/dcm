@@ -140,12 +140,13 @@ func (r *Registry) ListEnvironmentInfo() []EnvironmentInfo {
 	var infos []EnvironmentInfo
 	for _, e := range r.environments {
 		infos = append(infos, EnvironmentInfo{
-			Name:         e.Env.Metadata.Name,
-			Provider:     e.Env.Spec.Provider,
-			Labels:       e.Env.Metadata.Labels,
-			Capabilities: capStrings(e.Provider.Capabilities()),
-			Resources:    e.Env.Spec.Resources,
-			Cost:         e.Env.Spec.Cost,
+			Name:                    e.Env.Metadata.Name,
+			Provider:                e.Env.Spec.Provider,
+			Labels:                  e.Env.Metadata.Labels,
+			Capabilities:            capStrings(e.Provider.Capabilities()),
+			EnvironmentCapabilities: e.Env.Spec.Capabilities,
+			Resources:               e.Env.Spec.Resources,
+			Cost:                    e.Env.Spec.Cost,
 		})
 	}
 	return infos
@@ -153,12 +154,13 @@ func (r *Registry) ListEnvironmentInfo() []EnvironmentInfo {
 
 // EnvironmentInfo is a summary of an environment for API responses.
 type EnvironmentInfo struct {
-	Name         string              `json:"name"`
-	Provider     string              `json:"provider"`
-	Labels       map[string]string   `json:"labels,omitempty"`
-	Capabilities []string            `json:"capabilities"`
-	Resources    *types.ResourcePool `json:"resources,omitempty"`
-	Cost         *types.CostInfo     `json:"cost,omitempty"`
+	Name                 string              `json:"name"`
+	Provider             string              `json:"provider"`
+	Labels               map[string]string   `json:"labels,omitempty"`
+	Capabilities         []string            `json:"capabilities"`
+	EnvironmentCapabilities []string         `json:"environmentCapabilities,omitempty"`
+	Resources            *types.ResourcePool `json:"resources,omitempty"`
+	Cost                 *types.CostInfo     `json:"cost,omitempty"`
 }
 
 func capStrings(caps []types.ResourceType) []string {

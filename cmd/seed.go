@@ -12,9 +12,8 @@ import (
 // if they don't already exist. This provides a useful starting point
 // for new users exploring the UI.
 func seedSampleData(db *store.Store) {
-	seedPetclinicApp(db)
 	seedSampleEnvironments(db)
-	seedSamplePolicies(db)
+	seedPetclinicApp(db)
 }
 
 func seedPetclinicApp(db *store.Store) {
@@ -26,11 +25,13 @@ func seedPetclinicApp(db *store.Store) {
 
 	components := []types.Component{
 		{
-			Name: "database",
-			Type: "postgres",
+			Name:     "database",
+			Type:     "postgres",
+			Requires: []string{"persistent-storage"},
 			Labels: map[string]string{
 				"tier": "data",
 			},
+			ColocateWith: "app",
 			Properties: map[string]any{
 				"version":        "16",
 				"storage":        "20Gi",
@@ -38,20 +39,10 @@ func seedPetclinicApp(db *store.Store) {
 			},
 		},
 		{
-			Name: "cache",
-			Type: "redis",
-			Labels: map[string]string{
-				"tier": "data",
-			},
-			Properties: map[string]any{
-				"version":   "7",
-				"maxMemory": "512mb",
-			},
-		},
-		{
 			Name:      "app",
 			Type:      "container",
 			DependsOn: []string{"database", "cache"},
+			Requires:  []string{"loadbalancer"},
 			Labels: map[string]string{
 				"tier": "backend",
 			},
@@ -60,21 +51,23 @@ func seedPetclinicApp(db *store.Store) {
 				"replicas": 2,
 				"port":     8080,
 				"env": map[string]any{
-					"SPRING_PROFILES_ACTIVE":                           "postgres",
-					"SPRING_DATASOURCE_URL":                            "${database.outputs.connectionString}",
-					"SPRING_DATASOURCE_USERNAME":                       "petclinic",
-					"SPRING_DATASOURCE_PASSWORD":                       "petclinic",
-					"SPRING_CACHE_TYPE":                                "redis",
-					"SPRING_DATA_REDIS_HOST":                           "${cache.outputs.host}",
-					"SPRING_DATA_REDIS_PORT":                           "${cache.outputs.port}",
-					"MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE":        "health,info,prometheus",
+					"SPRING_PROFILES_ACTIVE":                    "postgres",
+					"SPRING_DATASOURCE_URL":                     "${database.outputs.connectionString}",
+					"SPRING_DATASOURCE_USERNAME":                "petclinic",
+					"SPRING_DATASOURCE_PASSWORD":                "petclinic",
+					"SPRING_CACHE_TYPE":                         "redis",
+					"SPRING_DATA_REDIS_HOST":                    "${cache.outputs.host}",
+					"SPRING_DATA_REDIS_PORT":                    "${cache.outputs.port}",
+					"MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE": "health,info,prometheus",
 				},
 			},
 		},
 		{
-			Name:      "app-ip",
-			Type:      "ip",
-			DependsOn: []string{"app"},
+			Name:         "app-ip",
+			Type:         "ip",
+			DependsOn:    []string{"app"},
+			Requires:     []string{"loadbalancer"},
+			ColocateWith: "app",
 			Labels: map[string]string{
 				"tier": "network",
 			},
@@ -125,8 +118,9 @@ func seedSampleEnvironments(db *store.Store) {
 				"env":    "development",
 				"region": "us-east-1",
 			},
-			Config: map[string]any{},
-			Status: "active",
+			Capabilities: []string{"loadbalancer", "persistent-storage"},
+			Config:       map[string]any{},
+			Status:       "active",
 		},
 	}
 
@@ -138,55 +132,6 @@ func seedSampleEnvironments(db *store.Store) {
 			log.Printf("seed: failed to create environment %s: %v", env.Name, err)
 			continue
 		}
-		log.Printf("seed: created sample environment %q", env.Name)
-	}
-}
-
-func seedSamplePolicies(db *store.Store) {
-	policies := []struct {
-		name  string
-		rules []types.PolicyRule
-	}{
-		{
-			name: "default-routing",
-			rules: []types.PolicyRule{
-				{
-					Name:     "data-tier-preferred",
-					Priority: 10,
-					Match: types.PolicyMatch{
-						Labels: map[string]string{"tier": "data"},
-					},
-					Providers: types.ProviderPolicy{
-						Strategy: "first",
-					},
-				},
-				{
-					Name:     "backend-tier",
-					Priority: 20,
-					Match: types.PolicyMatch{
-						Labels: map[string]string{"tier": "backend"},
-					},
-					Providers: types.ProviderPolicy{
-						Strategy: "round-robin",
-					},
-				},
-			},
-		},
-	}
-
-	for _, p := range policies {
-		if _, err := db.GetPolicy(p.name); err == nil {
-			continue
-		}
-		rulesJSON, _ := json.Marshal(p.rules)
-		rec := &store.PolicyRecord{
-			Name:  p.name,
-			Rules: rulesJSON,
-		}
-		if err := db.CreatePolicy(rec); err != nil {
-			log.Printf("seed: failed to create policy %s: %v", p.name, err)
-			continue
-		}
-		log.Printf("seed: created sample policy %q", p.name)
+		log.Printf("seed: created sample environment %q (capabilities: %v)", env.Name, env.Capabilities)
 	}
 }

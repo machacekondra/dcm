@@ -30,6 +30,8 @@ export interface Component {
   name: string;
   type: string;
   dependsOn?: string[];
+  requires?: string[];
+  colocateWith?: string;
   labels?: Record<string, string>;
   properties?: Record<string, unknown>;
 }
@@ -117,6 +119,7 @@ export interface EnvironmentRecord {
   name: string;
   provider: string;
   labels?: Record<string, string>;
+  capabilities?: string[];
   config?: Record<string, any>;
   resources?: { cpu: number; memory: number; pods: number } | null;
   cost?: { tier: string; hourlyRate: number } | null;
@@ -191,7 +194,7 @@ export const deployments = {
 export const environments = {
   list: () => get<EnvironmentRecord[]>('/environments'),
   get: (name: string) => get<EnvironmentRecord>(`/environments/${name}`),
-  create: (data: { name: string; provider: string; labels?: Record<string, string>; config?: Record<string, any>; resources?: { cpu: number; memory: number; pods: number }; cost?: { tier: string; hourlyRate: number } }) =>
+  create: (data: { name: string; provider: string; labels?: Record<string, string>; capabilities?: string[]; config?: Record<string, any>; resources?: { cpu: number; memory: number; pods: number }; cost?: { tier: string; hourlyRate: number } }) =>
     post<EnvironmentRecord>('/environments', data),
   update: (name: string, data: any) => put<EnvironmentRecord>(`/environments/${name}`, data),
   delete: (name: string) => del(`/environments/${name}`),

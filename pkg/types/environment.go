@@ -12,6 +12,10 @@ type EnvironmentSpec struct {
 	// Provider is the provider type (e.g., "kubernetes", "mock", "aws").
 	Provider string `yaml:"provider" json:"provider"`
 
+	// Capabilities lists infrastructure features this environment provides
+	// (e.g., "loadbalancer", "persistent-storage", "gpu").
+	Capabilities []string `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
+
 	// Config holds provider-specific configuration.
 	Config map[string]any `yaml:"config,omitempty" json:"config,omitempty"`
 

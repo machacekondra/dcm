@@ -6,7 +6,8 @@ DCM is a platform engineering tool that lets you define multi-component applicat
 
 - **Define applications as components** — databases, containers, caches, and static sites with explicit dependency relationships
 - **Deploy to any provider** — a provider abstraction layer routes each component to the right infrastructure (Kubernetes, AWS, mock, etc.)
-- **Use policies to control placement** — rules based on labels, component types, or CEL expressions determine which providers are used, without modifying application definitions
+- **Control placement with rules** — CEL expressions, labels, and type matching determine which providers handle each component, without modifying application definitions
+- **Enforce guardrails with OPA** — Rego rules block deployments that violate organizational standards (storage minimums, replica requirements, cost limits) before any resources are created
 - **Plan before you apply** — preview exactly what will be created, updated, or destroyed before making changes
 - **Track deployment state** — full audit trail of every deployment action
 
@@ -14,9 +15,11 @@ DCM is a platform engineering tool that lets you define multi-component applicat
 
 **Multi-cloud deployment** — deploy the same application to different providers based on environment. Use mock providers for development, Kubernetes for staging, and managed cloud services for production — all from the same application definition.
 
-**Policy-driven infrastructure** — platform teams define policies like "production databases must use AWS" or "EU workloads must not use US regions". Application teams deploy without worrying about provider details.
+**Placement rules** — platform teams define rules like "production databases must use AWS" or "EU workloads must not use US regions". Application teams deploy without worrying about provider details.
 
 **Dependency-aware orchestration** — define that your backend depends on a database and cache, and your frontend depends on the backend. DCM deploys them in the right order and passes connection details between components automatically.
+
+**Guardrails** — enforce organizational standards like "production databases must have at least 10Gi storage" or "containers in production must specify replicas". OPA/Rego guardrails are evaluated after planning but before any resources are touched, giving teams a safety net without slowing them down.
 
 **Standardized application templates** — define reusable application patterns (web app with database, microservice with cache) that teams can deploy consistently across environments.
 
@@ -69,7 +72,7 @@ make build
 ./dcm destroy -f app.yaml
 ```
 
-### Add policies
+### Add placement rules
 
 ```yaml
 # policies/placement.yaml
@@ -99,6 +102,43 @@ spec:
 ./dcm apply -f app.yaml -p policies/
 ```
 
+### Add guardrails
+
+Place Rego files in `data/policies/` to enforce infrastructure constraints:
+
+```rego
+# data/policies/production.rego
+package dcm.compliance
+
+deny contains msg if {
+    input.component.type == "postgres"
+    input.environment.labels.env == "prod"
+    storage := input.component.properties.storage
+    not startswith(storage, "10")
+    not startswith(storage, "20")
+    not startswith(storage, "50")
+    not startswith(storage, "100")
+    msg := sprintf("postgres %q in prod requires at least 10Gi storage, got %s",
+                   [input.component.name, storage])
+}
+
+deny contains msg if {
+    input.component.type == "container"
+    input.environment.labels.env == "prod"
+    not input.component.properties.replicas
+    msg := sprintf("container %q in prod must specify replicas",
+                   [input.component.name])
+}
+```
+
+Guardrails are loaded automatically on server startup and evaluated before every deployment. You can also check compliance without deploying:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/compliance/check \
+  -H 'Content-Type: application/json' \
+  -d '{"application": "my-web-app"}'
+```
+
 ### Run the API server and UI
 
 ```bash
@@ -118,27 +158,32 @@ The API is available at `http://localhost:8080` and the UI at `http://localhost:
 │   CLI / UI  │────▶│  Engine     │────▶│  Providers  │
 │             │     │  - DAG      │     │  - Mock     │
 │  plan       │     │  - Planner  │     │  - K8s      │
-│  apply      │     │  - Executor │     │  - AWS ...  │
-│  destroy    │     │             │     │             │
+│  apply      │     │  - Executor │     │  - Postgres │
+│  destroy    │     │             │     │  - AWS ...  │
 └─────────────┘     └──────┬──────┘     └─────────────┘
                            │
-                    ┌──────▼──────┐
-                    │  Policy     │
-                    │  Engine     │
-                    │  (CEL)      │
-                    └─────────────┘
+                ┌──────────┼──────────┐
+                │                     │
+         ┌──────▼──────┐      ┌──────▼──────┐
+         │  Placement  │      │  Guardrails │
+         │  Rules      │      │             │
+         │  (CEL)      │      │  (OPA/Rego) │
+         └─────────────┘      └─────────────┘
 ```
 
 **Engine** — builds a dependency DAG from application components, computes a plan (create/update/delete diffs), and executes it in topological order.
 
 **Providers** — implement a common interface (`Plan`, `Apply`, `Destroy`, `Status`) for each infrastructure backend. The mock provider works out of the box for testing; the Kubernetes provider creates Deployments and Services.
 
-**Policy engine** — evaluates rules against components using type matching, label matching, and CEL expressions. Determines which provider handles each component and can inject additional properties.
+**Placement rules** — evaluates CEL expressions, labels, and type matching to determine which provider handles each component. Can also inject properties into components.
+
+**Guardrails** — evaluates OPA/Rego rules against the computed plan before resources are created. Blocks deployments that violate organizational constraints like storage minimums, replica requirements, and cost limits.
 
 ## Documentation
 
 - [Applications](doc/app.md) — how to define and manage applications
-- [Policy engine](doc/policy.md) — how policies control provider selection
+- [Placement rules](doc/policy.md) — how CEL rules control provider selection
+- [Guardrails](doc/compliance.md) — how OPA/Rego rules enforce infrastructure standards
 - [API reference](doc/api.md) — REST API endpoints and usage
 
 ## Project structure
@@ -148,7 +193,8 @@ The API is available at `http://localhost:8080` and the UI at `http://localhost:
 ├── pkg/
 │   ├── types/            # Core types (Application, Policy, Provider, Resource)
 │   ├── engine/           # DAG builder, planner, executor
-│   ├── policy/           # CEL-based policy evaluator
+│   ├── policy/           # Placement rules (CEL-based)
+│   ├── compliance/       # Guardrails (OPA/Rego)
 │   ├── provider/         # Provider implementations (mock, kubernetes)
 │   ├── loader/           # YAML file loading
 │   ├── store/            # SQLite persistence for API mode

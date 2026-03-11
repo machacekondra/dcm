@@ -734,6 +734,8 @@ History action types:
 | `created` | Deployment was created. Details include policies and dryRun flag. |
 | `planning` | Plan computation started. |
 | `planned` | Plan computed. Details contain the full execution plan. |
+| `compliance_failed` | OPA compliance check failed. Details contain the violation messages. |
+| `deploying` | Apply phase started. |
 | `applied` | Resources applied. Details contain the full resource state. |
 | `failed` | An error occurred. Details contain the error message. |
 | `destroying` | Destruction started. |
@@ -744,6 +746,77 @@ History action types:
 | Status | Condition |
 |--------|-----------|
 | `404` | Deployment not found |
+
+---
+
+## Compliance
+
+### Check Compliance
+
+```
+POST /api/v1/compliance/check
+```
+
+Validates an application against all loaded OPA compliance policies without creating a deployment. This computes a plan internally and evaluates each step against the Rego policies.
+
+**Request Body**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `application` | string | yes | Application name to check |
+
+**Example**
+
+```bash
+curl -X POST http://localhost:8080/api/v1/compliance/check \
+  -H 'Content-Type: application/json' \
+  -d '{"application": "my-web-app"}'
+```
+
+**Response** `200 OK`
+
+```json
+{
+  "application": "my-web-app",
+  "violations": [],
+  "passed": true
+}
+```
+
+When violations are found:
+
+```json
+{
+  "application": "my-web-app",
+  "violations": [
+    {
+      "rule": "",
+      "message": "postgres \"database\" in prod requires at least 10Gi storage, got 1Gi"
+    }
+  ],
+  "passed": false
+}
+```
+
+If no compliance policies are loaded, returns an empty violations list with a message:
+
+```json
+{
+  "violations": [],
+  "message": "no compliance policies loaded"
+}
+```
+
+**Errors**
+
+| Status | Condition |
+|--------|-----------|
+| `400` | Missing application name |
+| `404` | Application not found |
+| `422` | Plan computation failed |
+| `500` | OPA evaluation error |
+
+> See [Compliance Engine](compliance.md) for details on writing Rego policies and the input schema.
 
 ---
 

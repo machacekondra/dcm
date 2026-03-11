@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/dcm-io/dcm/pkg/compliance"
 	"github.com/dcm-io/dcm/pkg/scheduler"
 	"github.com/dcm-io/dcm/pkg/store"
 	"github.com/dcm-io/dcm/pkg/types"
@@ -13,17 +14,19 @@ import (
 
 // Server is the DCM API server.
 type Server struct {
-	store    *store.Store
-	registry *scheduler.Registry
-	mux      *http.ServeMux
+	store      *store.Store
+	registry   *scheduler.Registry
+	compliance *compliance.Engine
+	mux        *http.ServeMux
 }
 
 // NewServer creates a new API server.
-func NewServer(st *store.Store, registry *scheduler.Registry) *Server {
+func NewServer(st *store.Store, registry *scheduler.Registry, comp *compliance.Engine) *Server {
 	s := &Server{
-		store:    st,
-		registry: registry,
-		mux:      http.NewServeMux(),
+		store:      st,
+		registry:   registry,
+		compliance: comp,
+		mux:        http.NewServeMux(),
 	}
 	s.routes()
 	return s
@@ -59,6 +62,9 @@ func (s *Server) routes() {
 	// Providers & Types
 	s.mux.HandleFunc("GET /api/v1/providers", s.handleListProviders)
 	s.mux.HandleFunc("GET /api/v1/types", s.handleListTypes)
+
+	// Compliance
+	s.mux.HandleFunc("POST /api/v1/compliance/check", s.handleComplianceCheck)
 
 	// Environments
 	s.mux.HandleFunc("POST /api/v1/environments", s.handleCreateEnvironment)

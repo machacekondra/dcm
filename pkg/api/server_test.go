@@ -29,7 +29,7 @@ func setupTestServer(t *testing.T) *Server {
 	})
 	reg := scheduler.NewRegistry(factories)
 	reg.RegisterProvider(mock.New())
-	return NewServer(db, reg)
+	return NewServer(db, reg, nil)
 }
 
 func doRequest(t *testing.T, s *Server, method, path string, body any) *httptest.ResponseRecorder {

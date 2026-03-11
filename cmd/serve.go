@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"log"
 
+	"path/filepath"
+
 	"github.com/dcm-io/dcm/pkg/api"
+	"github.com/dcm-io/dcm/pkg/compliance"
 	"github.com/dcm-io/dcm/pkg/scheduler"
 	"github.com/dcm-io/dcm/pkg/store"
 	"github.com/dcm-io/dcm/pkg/types"
@@ -43,7 +46,17 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("building registry: %w", err)
 	}
 
-	server := api.NewServer(db, reg)
+	// Load OPA compliance policies from data/policies/ directory.
+	comp := compliance.NewEngine()
+	policyDir := filepath.Join(dataDir, "policies")
+	if err := comp.LoadDir(policyDir); err != nil {
+		return fmt.Errorf("loading compliance policies: %w", err)
+	}
+	if comp.HasPolicies() {
+		log.Printf("Compliance engine loaded with policies from %s", policyDir)
+	}
+
+	server := api.NewServer(db, reg, comp)
 
 	return server.Start(serveAddr)
 }

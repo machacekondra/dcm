@@ -308,7 +308,10 @@ When an application is deployed (via CLI or API), DCM:
 1. Builds the dependency DAG and computes topological order
 2. Evaluates policies (if any) to determine provider selection and property injection for each component
 3. Runs the planner — each component is diffed against current state (create/update/delete/none)
-4. Executes the plan — components are applied in dependency order through their assigned providers
-5. Stores the resulting state — resource outputs, statuses, and provider assignments
+4. Runs the compliance check — OPA evaluates Rego policies against the plan (see [Compliance Engine](compliance.md))
+5. Executes the plan — components are applied in dependency order through their assigned providers
+6. Stores the resulting state — resource outputs, statuses, and provider assignments
+
+If the compliance check finds violations, the deployment fails before any resources are created or modified.
 
 Only one deployment per application is allowed at a time. To redeploy, destroy the existing deployment first.

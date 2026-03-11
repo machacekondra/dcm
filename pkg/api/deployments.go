@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"time"
 
+	"github.com/dcm-io/dcm/pkg/compliance"
 	"github.com/dcm-io/dcm/pkg/engine"
 	"github.com/dcm-io/dcm/pkg/policy"
 	"github.com/dcm-io/dcm/pkg/scheduler"
@@ -245,11 +247,36 @@ func (s *Server) runDeployment(deploymentID string, appRec *store.ApplicationRec
 
 	planJSON, _ := json.Marshal(plan)
 	d.Plan = planJSON
-	d.Status = "deploying"
 	s.store.UpdateDeployment(d)
 	s.store.AddHistory(&store.HistoryRecord{DeploymentID: d.ID, Action: "planned", Details: planJSON})
 
+	// Phase 1.5: Compliance check.
+	if s.compliance != nil && s.compliance.HasPolicies() {
+		violations, err := s.checkCompliance(context.Background(), app, plan)
+		if err != nil {
+			s.failDeployment(d, "compliance check error: "+err.Error())
+			return
+		}
+		if len(violations) > 0 {
+			msgs := make([]string, len(violations))
+			for i, v := range violations {
+				msgs[i] = v.Message
+			}
+			violationJSON := mustJSON(map[string]any{"violations": msgs})
+			s.store.AddHistory(&store.HistoryRecord{
+				DeploymentID: d.ID,
+				Action:       "compliance_failed",
+				Details:      violationJSON,
+			})
+			s.failDeployment(d, fmt.Sprintf("compliance check failed: %d violation(s)", len(violations)))
+			return
+		}
+		log.Printf("deployment %s: compliance check passed", d.ID)
+	}
+
 	// Phase 2: Applying.
+	d.Status = "deploying"
+	s.store.UpdateDeployment(d)
 	state := types.NewState(app.Metadata.Name)
 	if d.State != nil {
 		json.Unmarshal(d.State, state)
@@ -405,4 +432,112 @@ func mustJSON(v any) json.RawMessage {
 
 func generateID() string {
 	return fmt.Sprintf("dep-%d", time.Now().UnixNano())
+}
+
+// checkCompliance builds OPA inputs from the plan and evaluates them.
+func (s *Server) checkCompliance(ctx context.Context, app *types.Application, plan *engine.Plan) ([]compliance.Violation, error) {
+	componentMap := make(map[string]*types.Component)
+	for i := range app.Spec.Components {
+		c := &app.Spec.Components[i]
+		componentMap[c.Name] = c
+	}
+
+	var inputs []compliance.StepInput
+	for _, step := range plan.Steps {
+		c := componentMap[step.Component]
+		if c == nil {
+			continue
+		}
+
+		envInput := compliance.EnvironmentInput{Name: step.Environment}
+		// Try to enrich with environment metadata from the store.
+		if envRec, err := s.store.GetEnvironment(step.Environment); err == nil {
+			envInput.Provider = envRec.Provider
+			envInput.Labels = envRec.Labels
+			envInput.Capabilities = envRec.Capabilities
+			if envRec.Cost != nil {
+				var ci types.CostInfo
+				if json.Unmarshal(envRec.Cost, &ci) == nil {
+					envInput.Cost = &compliance.CostInput{
+						Tier:       ci.Tier,
+						HourlyRate: ci.HourlyRate,
+					}
+				}
+			}
+		}
+
+		inputs = append(inputs, compliance.StepInput{
+			Component: compliance.ComponentInput{
+				Name:       c.Name,
+				Type:       c.Type,
+				Labels:     c.Labels,
+				Properties: c.Properties,
+				Requires:   c.Requires,
+			},
+			Environment: envInput,
+			Action:      string(step.Diff.Action),
+			Application: compliance.ApplicationInput{
+				Name:   app.Metadata.Name,
+				Labels: app.Metadata.Labels,
+			},
+		})
+	}
+
+	return s.compliance.EvaluateAll(ctx, inputs)
+}
+
+// handleComplianceCheck lets users validate a plan against compliance policies without deploying.
+func (s *Server) handleComplianceCheck(w http.ResponseWriter, r *http.Request) {
+	if s.compliance == nil || !s.compliance.HasPolicies() {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"violations": []any{},
+			"message":    "no compliance policies loaded",
+		})
+		return
+	}
+
+	var req struct {
+		Application string `json:"application"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if req.Application == "" {
+		writeError(w, http.StatusBadRequest, "application is required")
+		return
+	}
+
+	appRec, err := s.store.GetApplication(req.Application)
+	if err != nil {
+		handleStoreError(w, err, "application")
+		return
+	}
+
+	app := recordToApplication(appRec)
+
+	// Create a temporary deployment record for planning.
+	tempDep := &store.DeploymentRecord{
+		ID:              "compliance-check",
+		ApplicationName: req.Application,
+		Status:          "checking",
+	}
+
+	plan, err := s.computePlan(app, tempDep)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "planning failed: "+err.Error())
+		return
+	}
+
+	violations, err := s.checkCompliance(r.Context(), app, plan)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "compliance check error: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"application": req.Application,
+		"violations":  violations,
+		"passed":      len(violations) == 0,
+	})
 }

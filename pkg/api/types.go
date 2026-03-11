@@ -39,6 +39,7 @@ func builtinTypeSchemas(providerNames []string) []TypeSchema {
 				{Name: "replicas", Type: "number", Default: 1, Description: "Number of replicas"},
 				{Name: "port", Type: "number", Default: 8080, Description: "Container port to expose"},
 				{Name: "env", Type: "object", Description: "Environment variables as key-value pairs"},
+				{Name: "service", Type: "object", Description: "Service config: {type: ClusterIP|NodePort|LoadBalancer, port: number}"},
 			},
 		},
 		{

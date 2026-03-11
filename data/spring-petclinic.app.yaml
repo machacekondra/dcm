@@ -29,20 +29,24 @@ spec:
         image: springcommunity/spring-petclinic:latest
         replicas: 2
         port: 8080
+        service:
+          type: LoadBalancer
+          port: 80
         env:
           SPRING_PROFILES_ACTIVE: postgres
           SPRING_DATASOURCE_URL: "${database.outputs.connectionString}"
           SPRING_DATASOURCE_USERNAME: petclinic
           SPRING_DATASOURCE_PASSWORD: petclinic
 
-    - name: app-ip
-      type: ip
-      dependsOn:
-        - app
-      requires:
-        - loadbalancer
-      colocateWith: app
-      labels:
-        tier: network
-      properties:
-        pool: production
+    #- name: app-dns
+    #  type: dns
+    #  dependsOn:
+    #    - app
+    #  labels:
+    #    tier: network
+    #  properties:
+    #    zone: example.com
+    #    record: petclinic.example.com
+    #    type: A
+    #    value: "${app.outputs.ip}"
+    #    ttl: 300

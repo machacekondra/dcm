@@ -146,7 +146,7 @@ export default function DeploymentDetail() {
                   <DescriptionListDescription><StatusLabel status={dep.status} /></DescriptionListDescription>
                 </DescriptionListGroup>
                 <DescriptionListGroup>
-                  <DescriptionListTerm>Policies</DescriptionListTerm>
+                  <DescriptionListTerm>Placement Rules</DescriptionListTerm>
                   <DescriptionListDescription>
                     {dep.policies?.length ? (
                       <LabelGroup>{dep.policies.map(p => <Label key={p}>{p}</Label>)}</LabelGroup>
@@ -270,7 +270,7 @@ export default function DeploymentDetail() {
                             isCompact
                             color={
                               h.action === 'applied' || h.action === 'destroyed' ? 'green'
-                                : h.action === 'failed' ? 'red'
+                                : h.action === 'failed' || h.action === 'compliance_failed' ? 'red'
                                 : h.action === 'planning' || h.action === 'destroying' ? 'orange'
                                 : 'blue'
                             }

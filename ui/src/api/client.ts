@@ -226,3 +226,22 @@ export interface TypeSchema {
 export const types = {
   list: () => request<TypeSchema[]>('/types'),
 };
+
+// --- Compliance (Guardrails) ---
+
+export interface ComplianceViolation {
+  rule: string;
+  message: string;
+}
+
+export interface ComplianceCheckResult {
+  application: string;
+  violations: ComplianceViolation[];
+  passed: boolean;
+  message?: string;
+}
+
+export const compliance = {
+  check: (application: string) =>
+    post<ComplianceCheckResult>('/compliance/check', { application }),
+};

@@ -6,6 +6,7 @@ import ApplicationEdit from './pages/ApplicationEdit';
 import ApplicationDetail from './pages/ApplicationDetail';
 import Policies from './pages/Policies';
 import PolicyDetail from './pages/PolicyDetail';
+import Guardrails from './pages/Guardrails';
 import Deployments from './pages/Deployments';
 import DeploymentDetail from './pages/DeploymentDetail';
 import Environments from './pages/Environments';
@@ -21,8 +22,12 @@ export default function App() {
           <Route path="/applications/create" element={<ApplicationCreate />} />
           <Route path="/applications/:name" element={<ApplicationDetail />} />
           <Route path="/applications/:name/edit" element={<ApplicationEdit />} />
-          <Route path="/policies" element={<Policies />} />
-          <Route path="/policies/:name" element={<PolicyDetail />} />
+          <Route path="/placement-rules" element={<Policies />} />
+          <Route path="/placement-rules/:name" element={<PolicyDetail />} />
+          {/* Keep old /policies routes as redirects */}
+          <Route path="/policies" element={<Navigate to="/placement-rules" replace />} />
+          <Route path="/policies/:name" element={<Navigate to="/placement-rules" replace />} />
+          <Route path="/guardrails" element={<Guardrails />} />
           <Route path="/deployments" element={<Deployments />} />
           <Route path="/deployments/:id" element={<DeploymentDetail />} />
           <Route path="/environments" element={<Environments />} />

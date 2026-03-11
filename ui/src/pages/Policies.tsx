@@ -137,7 +137,7 @@ export default function Policies() {
   useEffect(() => { load(); }, [load]);
 
   const handleDelete = async (name: string) => {
-    if (!confirm(`Delete policy "${name}"?`)) return;
+    if (!confirm(`Delete placement rule "${name}"?`)) return;
     try {
       await policies.delete(name);
       load();
@@ -149,23 +149,23 @@ export default function Policies() {
   return (
     <>
       <PageSection variant="light">
-        <Content component="h1">Policies</Content>
+        <Content component="h1">Placement Rules</Content>
       </PageSection>
       <PageSection>
       {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
       <Toolbar>
         <ToolbarContent>
           <ToolbarItem>
-            <Button onClick={() => setCreateOpen(true)}>Create policy</Button>
+            <Button onClick={() => setCreateOpen(true)}>Create rule</Button>
           </ToolbarItem>
         </ToolbarContent>
       </Toolbar>
       {!loading && list.length === 0 ? (
         <EmptyState>
-          <EmptyStateBody>No policies defined.</EmptyStateBody>
+          <EmptyStateBody>No placement rules defined.</EmptyStateBody>
           <EmptyStateFooter>
             <EmptyStateActions>
-              <Button onClick={() => setCreateOpen(true)}>Create policy</Button>
+              <Button onClick={() => setCreateOpen(true)}>Create rule</Button>
             </EmptyStateActions>
           </EmptyStateFooter>
         </EmptyState>
@@ -181,7 +181,7 @@ export default function Policies() {
           </Thead>
           <Tbody>
             {list.map(p => (
-              <Tr key={p.name} onRowClick={() => navigate(`/policies/${p.name}`)} isClickable>
+              <Tr key={p.name} onRowClick={() => navigate(`/placement-rules/${p.name}`)} isClickable>
                 <Td dataLabel="Name">{p.name}</Td>
                 <Td dataLabel="Rules">{p.rules.length}</Td>
                 <Td dataLabel="Created">{new Date(p.createdAt).toLocaleString()}</Td>
@@ -336,7 +336,7 @@ export function PolicyFormModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} variant="large">
-      <ModalHeader title={mode === 'create' ? 'Create Policy' : `Edit Policy: ${policy?.name ?? ''}`} />
+      <ModalHeader title={mode === 'create' ? 'Create Placement Rule' : `Edit Placement Rule: ${policy?.name ?? ''}`} />
       <ModalBody>
         {error && <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }} />}
 

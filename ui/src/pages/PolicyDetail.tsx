@@ -38,10 +38,10 @@ export default function PolicyDetail() {
   useEffect(() => { load(); }, [load]);
 
   const handleDelete = async () => {
-    if (!name || !confirm(`Delete policy "${name}"?`)) return;
+    if (!name || !confirm(`Delete placement rule "${name}"?`)) return;
     try {
       await policies.delete(name);
-      navigate('/policies');
+      navigate('/placement-rules');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -54,8 +54,8 @@ export default function PolicyDetail() {
     <>
       <PageSection variant="light">
         <Breadcrumb style={{ marginBottom: 16 }}>
-          <BreadcrumbItem to="/policies" onClick={e => { e.preventDefault(); navigate('/policies'); }}>
-            Policies
+          <BreadcrumbItem to="/placement-rules" onClick={e => { e.preventDefault(); navigate('/placement-rules'); }}>
+            Placement Rules
           </BreadcrumbItem>
           <BreadcrumbItem isActive>{name}</BreadcrumbItem>
         </Breadcrumb>

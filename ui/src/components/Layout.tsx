@@ -14,9 +14,9 @@ import {
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
 const navItems = [
+  { to: '/deployments', label: 'Deployments' },
   { to: '/applications', label: 'Applications' },
   { to: '/policies', label: 'Policies' },
-  { to: '/deployments', label: 'Deployments' },
   { to: '/environments', label: 'Environments' },
   { to: '/providers', label: 'Providers' },
 ];

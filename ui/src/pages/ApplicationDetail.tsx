@@ -28,6 +28,7 @@ import {
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
 import yaml from 'js-yaml';
 import { applications, type ApplicationRecord } from '../api/client';
+import TopologyGraph from '../components/TopologyGraph';
 
 function appToYaml(app: ApplicationRecord): string {
   const doc = {
@@ -138,6 +139,13 @@ export default function ApplicationDetail() {
               <DescriptionListDescription>{new Date(app.updatedAt).toLocaleString()}</DescriptionListDescription>
             </DescriptionListGroup>
           </DescriptionList>
+        </CardBody>
+      </Card>
+
+      <Card style={{ marginBottom: 24 }}>
+        <CardTitle>Topology</CardTitle>
+        <CardBody>
+          <TopologyGraph components={app.components} />
         </CardBody>
       </Card>
 

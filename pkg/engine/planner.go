@@ -76,6 +76,8 @@ func (p *Planner) CreatePlan(app *types.Application, currentState *types.State) 
 	}
 
 	// Build placement groups and pre-assign environments for co-located components.
+	// A placement group is only pre-assigned if a single environment supports all
+	// resource types in the group. Otherwise each component is scheduled independently.
 	envAssignments := make(map[string]string) // component name -> environment name
 	if p.scheduler != nil {
 		groups, err := BuildPlacementGroups(sorted)
@@ -84,19 +86,22 @@ func (p *Planner) CreatePlan(app *types.Application, currentState *types.State) 
 		}
 
 		for _, g := range groups {
-			if len(g.Requirements) > 0 || len(g.Components) > 1 {
-				envName, err := p.scheduler.ScheduleGroup(g.Components, g.Requirements, app)
-				if err != nil {
-					names := make([]string, len(g.Components))
-					for i, c := range g.Components {
-						names[i] = c.Name
-					}
-					return nil, fmt.Errorf("scheduling placement group %v (requires %v): %w",
-						names, g.Requirements, err)
+			if len(g.Components) <= 1 && len(g.Requirements) == 0 {
+				continue
+			}
+			envName, err := p.scheduler.ScheduleGroup(g.Components, g.Requirements, app)
+			if err != nil {
+				// No single environment supports all types — skip pre-assignment
+				// and let each component be scheduled independently.
+				names := make([]string, len(g.Components))
+				for i, c := range g.Components {
+					names[i] = c.Name
 				}
-				for _, c := range g.Components {
-					envAssignments[c.Name] = envName
-				}
+				log.Printf("[planner] placement group %v: no single environment supports all types, scheduling independently", names)
+				continue
+			}
+			for _, c := range g.Components {
+				envAssignments[c.Name] = envName
 			}
 		}
 	}
@@ -116,9 +121,7 @@ func (p *Planner) CreatePlan(app *types.Application, currentState *types.State) 
 
 		if p.scheduler != nil {
 			// Check if this component was pre-assigned via placement group.
-			if assigned, ok := envAssignments[component.Name]; ok {
-				envName = assigned
-			}
+			assigned := envAssignments[component.Name]
 
 			// Use scheduler for environment-aware selection.
 			result, err := p.scheduler.ScheduleWithRequirements(component, app, component.Requires)
@@ -128,8 +131,12 @@ func (p *Planner) CreatePlan(app *types.Application, currentState *types.State) 
 
 			provider = result.Provider
 			matchedRules = result.MatchedRules
-			if envName == "" {
-				envName = result.Environment
+			envName = result.Environment
+
+			// Use placement group assignment if set (ScheduleGroup already
+			// verified this environment supports the component's resource type).
+			if assigned != "" {
+				envName = assigned
 			}
 
 			// Merge policy-injected properties (component properties take precedence).

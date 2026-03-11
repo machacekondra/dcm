@@ -424,20 +424,70 @@ func hasAll(capabilities, requirements []string) bool {
 	return true
 }
 
-// ScheduleGroup selects one environment for a set of resource types that must
-// be co-located, using the merged requirements of the entire placement group.
-// It returns the first successful Schedule result using the chosen environment.
+// ScheduleGroup selects one environment for a placement group of components
+// that must be co-located. The environment must support all resource types
+// in the group and satisfy the merged requirements.
 func (s *Scheduler) ScheduleGroup(components []*types.Component, requirements []string, app *types.Application) (string, error) {
 	if len(components) == 0 {
 		return "", fmt.Errorf("empty placement group")
 	}
 
-	// Use the first component to select the environment, but with merged requirements.
-	result, err := s.ScheduleWithRequirements(components[0], app, requirements)
-	if err != nil {
-		return "", err
+	// Collect all unique resource types in the group.
+	typeSet := make(map[types.ResourceType]bool)
+	for _, c := range components {
+		typeSet[types.ResourceType(c.Type)] = true
 	}
-	return result.Environment, nil
+	resourceTypes := make([]types.ResourceType, 0, len(typeSet))
+	for rt := range typeSet {
+		resourceTypes = append(resourceTypes, rt)
+	}
+
+	// Find environments that support ALL resource types in the group.
+	candidates := s.registry.ListEnvironments()
+	candidates = filterByAllCapabilities(candidates, resourceTypes)
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("no environment supports all resource types %v for placement group", resourceTypes)
+	}
+
+	// Filter by required capabilities.
+	if len(requirements) > 0 {
+		candidates = filterByCapabilities(candidates, requirements)
+		if len(candidates) == 0 {
+			return "", fmt.Errorf("no environment provides %v for placement group", requirements)
+		}
+	}
+
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("no environment available for placement group after applying filters")
+	}
+
+	// Use first candidate (could apply strategy here in the future).
+	selected := candidates[0]
+	log.Printf("[scheduler] placement group assigned to environment %q (provider=%s)",
+		selected.Env.Metadata.Name, selected.Env.Spec.Provider)
+	return selected.Env.Metadata.Name, nil
+}
+
+// filterByAllCapabilities keeps only environments whose provider supports
+// all of the given resource types.
+func filterByAllCapabilities(candidates []*EnvironmentInstance, resourceTypes []types.ResourceType) []*EnvironmentInstance {
+	var filtered []*EnvironmentInstance
+	for _, c := range candidates {
+		caps := c.Provider.Capabilities()
+		if containsAll(caps, resourceTypes) {
+			filtered = append(filtered, c)
+		}
+	}
+	return filtered
+}
+
+func containsAll(caps []types.ResourceType, required []types.ResourceType) bool {
+	for _, req := range required {
+		if !slices.Contains(caps, req) {
+			return false
+		}
+	}
+	return true
 }
 
 func envNames(envs []*EnvironmentInstance) []string {

@@ -3,8 +3,7 @@ kind: Application
 metadata:
   name: spring-petclinic
   labels:
-    framework: spring-boot
-    team: platform
+    env: prod
 spec:
   components:
     - name: database
@@ -12,6 +11,7 @@ spec:
       colocateWith: app
       labels:
         tier: data
+        env: prod
       properties:
         version: "16"
         storage: 20Gi
@@ -25,18 +25,16 @@ spec:
         - loadbalancer
       labels:
         tier: backend
+        env: prod
       properties:
-        image: springcommunity/spring-petclinic:latest
+        image: springcommunity/spring-framework-petclinic:6.1.2
         replicas: 2
         port: 8080
         service:
           type: LoadBalancer
           port: 80
         env:
-          SPRING_PROFILES_ACTIVE: postgres
           SPRING_DATASOURCE_URL: "${database.outputs.connectionString}"
-          SPRING_DATASOURCE_USERNAME: petclinic
-          SPRING_DATASOURCE_PASSWORD: petclinic
 
     #- name: app-dns
     #  type: dns

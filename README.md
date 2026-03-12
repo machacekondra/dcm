@@ -184,6 +184,7 @@ The API is available at `http://localhost:8080` and the UI at `http://localhost:
 - [Applications](doc/app.md) — how to define and manage applications
 - [Placement rules](doc/policy.md) — how CEL rules control provider selection
 - [Guardrails](doc/compliance.md) — how OPA/Rego rules enforce infrastructure standards
+- [Health checks](doc/health-checks.md) — active environment health probing and automatic failover
 - [API reference](doc/api.md) — REST API endpoints and usage
 
 ## Project structure

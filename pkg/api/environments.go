@@ -16,6 +16,7 @@ type createEnvironmentRequest struct {
 	Config       map[string]any      `json:"config,omitempty"`
 	Resources    *types.ResourcePool `json:"resources,omitempty"`
 	Cost         *types.CostInfo     `json:"cost,omitempty"`
+	HealthCheck  *types.HealthCheck  `json:"healthCheck,omitempty"`
 }
 
 func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request) {
@@ -34,7 +35,7 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var resources, cost json.RawMessage
+	var resources, cost, healthCheck json.RawMessage
 	if req.Resources != nil {
 		r, _ := json.Marshal(req.Resources)
 		resources = r
@@ -42,6 +43,10 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 	if req.Cost != nil {
 		c, _ := json.Marshal(req.Cost)
 		cost = c
+	}
+	if req.HealthCheck != nil {
+		h, _ := json.Marshal(req.HealthCheck)
+		healthCheck = h
 	}
 
 	rec := &store.EnvironmentRecord{
@@ -52,6 +57,7 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 		Config:       req.Config,
 		Resources:    resources,
 		Cost:         cost,
+		HealthCheck:  healthCheck,
 		Status:       "active",
 	}
 
@@ -99,7 +105,7 @@ func (s *Server) handleUpdateEnvironment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var resources, cost json.RawMessage
+	var resources, cost, healthCheck json.RawMessage
 	if req.Resources != nil {
 		r, _ := json.Marshal(req.Resources)
 		resources = r
@@ -107,6 +113,10 @@ func (s *Server) handleUpdateEnvironment(w http.ResponseWriter, r *http.Request)
 	if req.Cost != nil {
 		c, _ := json.Marshal(req.Cost)
 		cost = c
+	}
+	if req.HealthCheck != nil {
+		h, _ := json.Marshal(req.HealthCheck)
+		healthCheck = h
 	}
 
 	rec := &store.EnvironmentRecord{
@@ -117,6 +127,7 @@ func (s *Server) handleUpdateEnvironment(w http.ResponseWriter, r *http.Request)
 		Config:       req.Config,
 		Resources:    resources,
 		Cost:         cost,
+		HealthCheck:  healthCheck,
 		Status:       "active",
 	}
 
@@ -135,4 +146,56 @@ func (s *Server) handleDeleteEnvironment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleEnvironmentHeartbeat(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+
+	var req struct {
+		Status  string `json:"status"`
+		Message string `json:"message,omitempty"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+
+	if req.Status == "" {
+		req.Status = "healthy"
+	}
+
+	if req.Status != "healthy" && req.Status != "unhealthy" && req.Status != "degraded" {
+		writeError(w, http.StatusBadRequest, "status must be healthy, unhealthy, or degraded")
+		return
+	}
+
+	if err := s.store.UpdateHealthStatus(name, req.Status, req.Message); err != nil {
+		handleStoreError(w, err, "environment")
+		return
+	}
+
+	// Update in-memory registry so scheduler sees the change immediately.
+	s.registry.UpdateHealthStatus(name, req.Status)
+
+	env, err := s.store.GetEnvironment(name)
+	if err != nil {
+		handleStoreError(w, err, "environment")
+		return
+	}
+	writeJSON(w, http.StatusOK, env)
+}
+
+func (s *Server) handleEnvironmentHealth(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	env, err := s.store.GetEnvironment(name)
+	if err != nil {
+		handleStoreError(w, err, "environment")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"name":          env.Name,
+		"healthStatus":  env.HealthStatus,
+		"healthMessage": env.HealthMessage,
+		"lastHeartbeat": env.LastHeartbeat,
+	})
 }

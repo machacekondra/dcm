@@ -98,6 +98,14 @@ func (s *Store) migrate() error {
 	// Add capabilities column if it doesn't exist (migration).
 	s.db.Exec(`ALTER TABLE environments ADD COLUMN capabilities TEXT NOT NULL DEFAULT '[]'`)
 
+	// Add health check columns (migration).
+	s.db.Exec(`ALTER TABLE environments ADD COLUMN health_status TEXT NOT NULL DEFAULT 'unknown'`)
+	s.db.Exec(`ALTER TABLE environments ADD COLUMN health_message TEXT NOT NULL DEFAULT ''`)
+	s.db.Exec(`ALTER TABLE environments ADD COLUMN last_heartbeat TEXT`)
+
+	// Add health check config column (migration).
+	s.db.Exec(`ALTER TABLE environments ADD COLUMN health_check TEXT`)
+
 	return nil
 }
 
@@ -422,16 +430,20 @@ func (s *Store) GetHistory(deploymentID string) ([]HistoryRecord, error) {
 // --- Environment CRUD ---
 
 type EnvironmentRecord struct {
-	Name         string            `json:"name"`
-	Provider     string            `json:"provider"`
-	Labels       map[string]string `json:"labels,omitempty"`
-	Capabilities []string          `json:"capabilities,omitempty"`
-	Config       map[string]any    `json:"config,omitempty"`
-	Resources    json.RawMessage   `json:"resources,omitempty"`
-	Cost         json.RawMessage   `json:"cost,omitempty"`
-	Status       string            `json:"status"`
-	CreatedAt    time.Time         `json:"createdAt"`
-	UpdatedAt    time.Time         `json:"updatedAt"`
+	Name          string            `json:"name"`
+	Provider      string            `json:"provider"`
+	Labels        map[string]string `json:"labels,omitempty"`
+	Capabilities  []string          `json:"capabilities,omitempty"`
+	Config        map[string]any    `json:"config,omitempty"`
+	Resources     json.RawMessage   `json:"resources,omitempty"`
+	Cost          json.RawMessage   `json:"cost,omitempty"`
+	Status        string            `json:"status"`
+	HealthCheck   json.RawMessage   `json:"healthCheck,omitempty"`
+	HealthStatus  string            `json:"healthStatus"`
+	HealthMessage string            `json:"healthMessage,omitempty"`
+	LastHeartbeat *time.Time        `json:"lastHeartbeat,omitempty"`
+	CreatedAt     time.Time         `json:"createdAt"`
+	UpdatedAt     time.Time         `json:"updatedAt"`
 }
 
 func (s *Store) CreateEnvironment(env *EnvironmentRecord) error {
@@ -442,7 +454,7 @@ func (s *Store) CreateEnvironment(env *EnvironmentRecord) error {
 	if env.Status == "" {
 		env.Status = "active"
 	}
-	var resources, cost *string
+	var resources, cost, healthCheck *string
 	if env.Resources != nil {
 		r := string(env.Resources)
 		resources = &r
@@ -451,10 +463,14 @@ func (s *Store) CreateEnvironment(env *EnvironmentRecord) error {
 		c := string(env.Cost)
 		cost = &c
 	}
+	if env.HealthCheck != nil {
+		h := string(env.HealthCheck)
+		healthCheck = &h
+	}
 	_, err := s.db.Exec(
-		`INSERT INTO environments (name, provider, labels, capabilities, config, resources, cost, status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		env.Name, env.Provider, string(labels), string(capabilities), string(config), resources, cost, env.Status,
+		`INSERT INTO environments (name, provider, labels, capabilities, config, resources, cost, health_check, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		env.Name, env.Provider, string(labels), string(capabilities), string(config), resources, cost, healthCheck, env.Status,
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -467,7 +483,8 @@ func (s *Store) CreateEnvironment(env *EnvironmentRecord) error {
 
 func (s *Store) GetEnvironment(name string) (*EnvironmentRecord, error) {
 	row := s.db.QueryRow(
-		`SELECT name, provider, labels, capabilities, config, resources, cost, status, created_at, updated_at
+		`SELECT name, provider, labels, capabilities, config, resources, cost, status,
+		        health_check, health_status, health_message, last_heartbeat, created_at, updated_at
 		 FROM environments WHERE name = ?`, name,
 	)
 	return scanEnvironment(row)
@@ -475,7 +492,8 @@ func (s *Store) GetEnvironment(name string) (*EnvironmentRecord, error) {
 
 func (s *Store) ListEnvironments() ([]EnvironmentRecord, error) {
 	rows, err := s.db.Query(
-		`SELECT name, provider, labels, capabilities, config, resources, cost, status, created_at, updated_at
+		`SELECT name, provider, labels, capabilities, config, resources, cost, status,
+		        health_check, health_status, health_message, last_heartbeat, created_at, updated_at
 		 FROM environments ORDER BY name`,
 	)
 	if err != nil {
@@ -499,7 +517,7 @@ func (s *Store) UpdateEnvironment(env *EnvironmentRecord) error {
 	capabilities, _ := json.Marshal(env.Capabilities)
 	config, _ := json.Marshal(env.Config)
 	now := time.Now().UTC()
-	var resources, cost *string
+	var resources, cost, healthCheck *string
 	if env.Resources != nil {
 		r := string(env.Resources)
 		resources = &r
@@ -508,10 +526,14 @@ func (s *Store) UpdateEnvironment(env *EnvironmentRecord) error {
 		c := string(env.Cost)
 		cost = &c
 	}
+	if env.HealthCheck != nil {
+		h := string(env.HealthCheck)
+		healthCheck = &h
+	}
 	res, err := s.db.Exec(
-		`UPDATE environments SET provider = ?, labels = ?, capabilities = ?, config = ?, resources = ?, cost = ?, status = ?, updated_at = ?
+		`UPDATE environments SET provider = ?, labels = ?, capabilities = ?, config = ?, resources = ?, cost = ?, health_check = ?, status = ?, updated_at = ?
 		 WHERE name = ?`,
-		env.Provider, string(labels), string(capabilities), string(config), resources, cost, env.Status, now.Format(time.RFC3339), env.Name,
+		env.Provider, string(labels), string(capabilities), string(config), resources, cost, healthCheck, env.Status, now.Format(time.RFC3339), env.Name,
 	)
 	if err != nil {
 		return err
@@ -535,6 +557,24 @@ func (s *Store) DeleteEnvironment(name string) error {
 	}
 	return nil
 }
+
+// UpdateHealthStatus updates the health status and heartbeat timestamp.
+func (s *Store) UpdateHealthStatus(name, healthStatus, healthMessage string) error {
+	now := time.Now().UTC()
+	res, err := s.db.Exec(
+		`UPDATE environments SET health_status = ?, health_message = ?, last_heartbeat = ?, updated_at = ? WHERE name = ?`,
+		healthStatus, healthMessage, now.Format(time.RFC3339), now.Format(time.RFC3339), name,
+	)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 
 // --- Errors ---
 
@@ -625,8 +665,9 @@ func scanDeploymentRow(rows *sql.Rows) (*DeploymentRecord, error) {
 func scanEnvironment(row scanner) (*EnvironmentRecord, error) {
 	var env EnvironmentRecord
 	var labels, capabilities, config, createdAt, updatedAt string
-	var resources, cost sql.NullString
-	err := row.Scan(&env.Name, &env.Provider, &labels, &capabilities, &config, &resources, &cost, &env.Status, &createdAt, &updatedAt)
+	var resources, cost, healthCheck, lastHeartbeat sql.NullString
+	err := row.Scan(&env.Name, &env.Provider, &labels, &capabilities, &config, &resources, &cost, &env.Status,
+		&healthCheck, &env.HealthStatus, &env.HealthMessage, &lastHeartbeat, &createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
@@ -641,6 +682,13 @@ func scanEnvironment(row scanner) (*EnvironmentRecord, error) {
 	}
 	if cost.Valid {
 		env.Cost = json.RawMessage(cost.String)
+	}
+	if healthCheck.Valid {
+		env.HealthCheck = json.RawMessage(healthCheck.String)
+	}
+	if lastHeartbeat.Valid {
+		t, _ := time.Parse(time.RFC3339, lastHeartbeat.String)
+		env.LastHeartbeat = &t
 	}
 	env.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	env.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)

@@ -820,6 +820,106 @@ If no compliance policies are loaded, returns an empty violations list with a me
 
 ---
 
+## Environment Health
+
+DCM actively probes environments that have a `healthCheck` configured. A background goroutine contacts each environment's health check URL every 30 seconds and updates the status based on the HTTP response.
+
+### Health Check Configuration
+
+Include a `healthCheck` object when creating or updating an environment:
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `healthCheck.url` | string | yes | — | HTTP endpoint to probe |
+| `healthCheck.intervalSeconds` | int | no | 30 | Probe interval in seconds |
+| `healthCheck.timeoutSeconds` | int | no | 10 | HTTP timeout per probe |
+| `healthCheck.insecureSkipVerify` | bool | no | false | Skip TLS certificate verification |
+| `healthCheck.headers` | object | no | — | Additional HTTP headers |
+
+**Example**
+
+```bash
+curl -X POST http://localhost:8080/api/v1/environments \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "prod-cluster",
+    "provider": "kubernetes",
+    "healthCheck": {
+      "url": "https://k8s-api:6443/healthz",
+      "timeoutSeconds": 5,
+      "insecureSkipVerify": true,
+      "headers": {"Authorization": "Bearer <token>"}
+    }
+  }'
+```
+
+### Send Heartbeat (Manual Override)
+
+```
+POST /api/v1/environments/{name}/heartbeat
+```
+
+Manually set the health status of an environment. Useful for maintenance windows or when automated probing is not sufficient.
+
+**Request Body**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `status` | string | no | `healthy`, `degraded`, or `unhealthy`. Defaults to `healthy`. |
+| `message` | string | no | Human-readable status message |
+
+**Example**
+
+```bash
+curl -X POST http://localhost:8080/api/v1/environments/prod-cluster/heartbeat \
+  -H 'Content-Type: application/json' \
+  -d '{"status": "unhealthy", "message": "maintenance window"}'
+```
+
+**Response** `200 OK`
+
+Returns the full environment record with updated health fields.
+
+> Note: If the environment has a health check configured, the manual status will be overwritten on the next probe cycle.
+
+**Errors**
+
+| Status | Condition |
+|--------|-----------|
+| `400` | Invalid status value |
+| `404` | Environment not found |
+
+---
+
+### Get Health Status
+
+```
+GET /api/v1/environments/{name}/health
+```
+
+Returns the current health status of an environment.
+
+**Response** `200 OK`
+
+```json
+{
+  "name": "prod-cluster",
+  "healthStatus": "healthy",
+  "healthMessage": "",
+  "lastHeartbeat": "2026-03-11T15:30:00Z"
+}
+```
+
+**Errors**
+
+| Status | Condition |
+|--------|-----------|
+| `404` | Environment not found |
+
+> See [Health Checks](health-checks.md) for details on configuring health probes and how health status affects scheduling.
+
+---
+
 ## Providers
 
 ### List Providers

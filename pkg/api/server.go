@@ -1,15 +1,20 @@
 package api
 
 import (
+	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/dcm-io/dcm/pkg/compliance"
 	"github.com/dcm-io/dcm/pkg/scheduler"
 	"github.com/dcm-io/dcm/pkg/store"
 	"github.com/dcm-io/dcm/pkg/types"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 // Server is the DCM API server.
@@ -72,6 +77,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/environments/{name}", s.handleGetEnvironment)
 	s.mux.HandleFunc("PUT /api/v1/environments/{name}", s.handleUpdateEnvironment)
 	s.mux.HandleFunc("DELETE /api/v1/environments/{name}", s.handleDeleteEnvironment)
+	s.mux.HandleFunc("POST /api/v1/environments/{name}/heartbeat", s.handleEnvironmentHeartbeat)
+	s.mux.HandleFunc("GET /api/v1/environments/{name}/health", s.handleEnvironmentHealth)
 }
 
 // ServeHTTP implements http.Handler.
@@ -92,8 +99,142 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // Start runs the server on the given address.
 func (s *Server) Start(addr string) error {
+	s.startHealthChecker()
 	log.Printf("DCM API server listening on %s", addr)
 	return http.ListenAndServe(addr, s)
+}
+
+// startHealthChecker runs a background goroutine that actively probes
+// each environment's health check endpoint and updates its status.
+func (s *Server) startHealthChecker() {
+	const defaultInterval = 30 * time.Second
+	const defaultTimeout = 10 * time.Second
+
+	go func() {
+		ticker := time.NewTicker(defaultInterval)
+		defer ticker.Stop()
+		for range ticker.C {
+			s.probeAllEnvironments(defaultTimeout)
+		}
+	}()
+}
+
+// probeAllEnvironments checks every active environment.
+// For kubernetes providers with a kubeconfig, it uses the k8s API directly.
+// For others, it uses the explicit health check URL if configured.
+func (s *Server) probeAllEnvironments(defaultTimeout time.Duration) {
+	envs, err := s.store.ListEnvironments()
+	if err != nil {
+		log.Printf("[health] error listing environments: %v", err)
+		return
+	}
+
+	for _, env := range envs {
+		if env.Status != "active" {
+			continue
+		}
+
+		var status, message string
+
+		// Kubernetes providers: use kubeconfig from config to check cluster health.
+		if env.Provider == "kubernetes" || env.Provider == "postgres" || env.Provider == "kubevirt" {
+			kubeconfig, _ := env.Config["kubeconfig"].(string)
+			if kubeconfig == "" {
+				continue
+			}
+			status, message = s.probeKubernetes(kubeconfig, defaultTimeout)
+		} else if env.HealthCheck != nil {
+			// Other providers: use explicit health check URL.
+			var hc types.HealthCheck
+			if err := json.Unmarshal(env.HealthCheck, &hc); err != nil {
+				log.Printf("[health] %s: invalid health check config: %v", env.Name, err)
+				continue
+			}
+			if hc.URL == "" {
+				continue
+			}
+			status, message = s.probeHTTP(hc, defaultTimeout)
+		} else {
+			continue
+		}
+
+		if err := s.store.UpdateHealthStatus(env.Name, status, message); err != nil {
+			log.Printf("[health] %s: error updating status: %v", env.Name, err)
+			continue
+		}
+		s.registry.UpdateHealthStatus(env.Name, status)
+
+		if status != "healthy" {
+			log.Printf("[health] %s: %s — %s", env.Name, status, message)
+		}
+	}
+}
+
+// probeKubernetes checks the health of a Kubernetes cluster using the kubeconfig.
+func (s *Server) probeKubernetes(kubeconfig string, defaultTimeout time.Duration) (status, message string) {
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	loadingRules.ExplicitPath = kubeconfig
+	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, &clientcmd.ConfigOverrides{})
+
+	restConfig, err := kubeConfig.ClientConfig()
+	if err != nil {
+		return "unhealthy", fmt.Sprintf("invalid kubeconfig: %v", err)
+	}
+	restConfig.Timeout = defaultTimeout
+
+	client, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return "unhealthy", fmt.Sprintf("cannot create k8s client: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
+	body, err := client.Discovery().RESTClient().Get().AbsPath("/healthz").Do(ctx).Raw()
+	if err != nil {
+		return "unhealthy", fmt.Sprintf("cluster health check failed: %v", err)
+	}
+
+	if string(body) == "ok" {
+		return "healthy", ""
+	}
+	return "degraded", fmt.Sprintf("cluster responded: %s", string(body))
+}
+
+// probeHTTP performs an HTTP GET to the health check URL.
+func (s *Server) probeHTTP(hc types.HealthCheck, defaultTimeout time.Duration) (status, message string) {
+	timeout := defaultTimeout
+	if hc.TimeoutSeconds > 0 {
+		timeout = time.Duration(hc.TimeoutSeconds) * time.Second
+	}
+
+	transport := &http.Transport{}
+	if hc.InsecureSkipVerify {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // user-configured
+	}
+	client := &http.Client{Timeout: timeout, Transport: transport}
+
+	req, err := http.NewRequest(http.MethodGet, hc.URL, nil)
+	if err != nil {
+		return "unhealthy", fmt.Sprintf("invalid health check URL: %v", err)
+	}
+	for k, v := range hc.Headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "unhealthy", fmt.Sprintf("probe failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return "healthy", ""
+	}
+	if resp.StatusCode >= 500 {
+		return "unhealthy", fmt.Sprintf("probe returned HTTP %d", resp.StatusCode)
+	}
+	return "degraded", fmt.Sprintf("probe returned HTTP %d", resp.StatusCode)
 }
 
 // --- Helpers ---

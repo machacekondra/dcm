@@ -135,6 +135,16 @@ func (r *Registry) ListByCapability(rt types.ResourceType) []*EnvironmentInstanc
 	return result
 }
 
+// UpdateHealthStatus updates the health status of a registered environment.
+func (r *Registry) UpdateHealthStatus(name, status string) bool {
+	e, ok := r.environments[name]
+	if !ok {
+		return false
+	}
+	e.Env.Spec.HealthStatus = status
+	return true
+}
+
 // ListEnvironmentInfo returns summary info for all environments.
 func (r *Registry) ListEnvironmentInfo() []EnvironmentInfo {
 	var infos []EnvironmentInfo
@@ -147,6 +157,7 @@ func (r *Registry) ListEnvironmentInfo() []EnvironmentInfo {
 			EnvironmentCapabilities: e.Env.Spec.Capabilities,
 			Resources:               e.Env.Spec.Resources,
 			Cost:                    e.Env.Spec.Cost,
+			HealthStatus:            e.Env.Spec.HealthStatus,
 		})
 	}
 	return infos
@@ -154,13 +165,14 @@ func (r *Registry) ListEnvironmentInfo() []EnvironmentInfo {
 
 // EnvironmentInfo is a summary of an environment for API responses.
 type EnvironmentInfo struct {
-	Name                 string              `json:"name"`
-	Provider             string              `json:"provider"`
-	Labels               map[string]string   `json:"labels,omitempty"`
-	Capabilities         []string            `json:"capabilities"`
-	EnvironmentCapabilities []string         `json:"environmentCapabilities,omitempty"`
-	Resources            *types.ResourcePool `json:"resources,omitempty"`
-	Cost                 *types.CostInfo     `json:"cost,omitempty"`
+	Name                    string              `json:"name"`
+	Provider                string              `json:"provider"`
+	Labels                  map[string]string   `json:"labels,omitempty"`
+	Capabilities            []string            `json:"capabilities"`
+	EnvironmentCapabilities []string            `json:"environmentCapabilities,omitempty"`
+	Resources               *types.ResourcePool `json:"resources,omitempty"`
+	Cost                    *types.CostInfo     `json:"cost,omitempty"`
+	HealthStatus            string              `json:"healthStatus,omitempty"`
 }
 
 func capStrings(caps []types.ResourceType) []string {

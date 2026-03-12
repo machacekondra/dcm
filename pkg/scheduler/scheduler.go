@@ -73,6 +73,13 @@ func (s *Scheduler) ScheduleWithRequirements(component *types.Component, app *ty
 		}
 	}
 
+	// Filter out unhealthy environments.
+	candidates = filterByHealth(candidates)
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("no healthy environment available for component %q (type %s)",
+			component.Name, component.Type)
+	}
+
 	log.Printf("[scheduler]   %d candidate environment(s) for type %q: %v",
 		len(candidates), component.Type, envNames(candidates))
 
@@ -394,6 +401,18 @@ func buildEnvironmentCELMap(e *EnvironmentInstance) map[string]any {
 		"resources":    resources,
 		"cost":         cost,
 	}
+}
+
+// filterByHealth keeps only environments that are not unhealthy.
+// Environments with health status "healthy", "degraded", "unknown", or "" are allowed.
+func filterByHealth(candidates []*EnvironmentInstance) []*EnvironmentInstance {
+	var filtered []*EnvironmentInstance
+	for _, c := range candidates {
+		if c.Env.Spec.HealthStatus != "unhealthy" {
+			filtered = append(filtered, c)
+		}
+	}
+	return filtered
 }
 
 // filterByCapabilities keeps only environments whose Capabilities list

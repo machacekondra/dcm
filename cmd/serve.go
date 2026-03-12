@@ -98,7 +98,14 @@ func storeEnvToType(rec store.EnvironmentRecord) types.Environment {
 			Provider:     rec.Provider,
 			Capabilities: rec.Capabilities,
 			Config:       rec.Config,
+			HealthStatus: rec.HealthStatus,
 		},
+	}
+	if rec.HealthCheck != nil {
+		var hc types.HealthCheck
+		if json.Unmarshal(rec.HealthCheck, &hc) == nil {
+			env.Spec.HealthCheck = &hc
+		}
 	}
 	if rec.Resources != nil {
 		var rp types.ResourcePool

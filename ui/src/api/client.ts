@@ -115,6 +115,14 @@ export interface HistoryRecord {
   createdAt: string;
 }
 
+export interface HealthCheck {
+  url: string;
+  intervalSeconds?: number;
+  timeoutSeconds?: number;
+  insecureSkipVerify?: boolean;
+  headers?: Record<string, string>;
+}
+
 export interface EnvironmentRecord {
   name: string;
   provider: string;
@@ -123,7 +131,11 @@ export interface EnvironmentRecord {
   config?: Record<string, any>;
   resources?: { cpu: number; memory: number; pods: number } | null;
   cost?: { tier: string; hourlyRate: number } | null;
+  healthCheck?: HealthCheck | null;
   status: string;
+  healthStatus: string;
+  healthMessage?: string;
+  lastHeartbeat?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -194,7 +206,7 @@ export const deployments = {
 export const environments = {
   list: () => get<EnvironmentRecord[]>('/environments'),
   get: (name: string) => get<EnvironmentRecord>(`/environments/${name}`),
-  create: (data: { name: string; provider: string; labels?: Record<string, string>; capabilities?: string[]; config?: Record<string, any>; resources?: { cpu: number; memory: number; pods: number }; cost?: { tier: string; hourlyRate: number } }) =>
+  create: (data: { name: string; provider: string; labels?: Record<string, string>; capabilities?: string[]; config?: Record<string, any>; resources?: { cpu: number; memory: number; pods: number }; cost?: { tier: string; hourlyRate: number }; healthCheck?: HealthCheck }) =>
     post<EnvironmentRecord>('/environments', data),
   update: (name: string, data: any) => put<EnvironmentRecord>(`/environments/${name}`, data),
   delete: (name: string) => del(`/environments/${name}`),

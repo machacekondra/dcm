@@ -22,7 +22,8 @@ import {
   ToolbarItem,
 } from '@patternfly/react-core';
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
-import { environments, type EnvironmentRecord } from '../api/client';
+import { Tooltip } from '@patternfly/react-core';
+import { environments, type EnvironmentRecord, type HealthCheck } from '../api/client';
 
 export default function Environments() {
   const [list, setList] = useState<EnvironmentRecord[]>([]);
@@ -82,6 +83,7 @@ export default function Environments() {
                 <Th>Resources</Th>
                 <Th>Cost</Th>
                 <Th>Status</Th>
+                <Th>Health</Th>
                 <Th>Actions</Th>
               </Tr>
             </Thead>
@@ -115,6 +117,9 @@ export default function Environments() {
                     {env.cost ? `${env.cost.tier} ($${env.cost.hourlyRate}/hr)` : '—'}
                   </Td>
                   <Td dataLabel="Status"><Label isCompact color={env.status === 'active' ? 'green' : 'grey'}>{env.status}</Label></Td>
+                  <Td dataLabel="Health">
+                    <HealthLabel status={env.healthStatus} message={env.healthMessage} lastHeartbeat={env.lastHeartbeat} />
+                  </Td>
                   <Td dataLabel="Actions" isActionCell>
                     <Button variant="secondary" size="sm" onClick={() => setEditingEnv(env)} style={{ marginRight: 8 }}>
                       Edit
@@ -146,6 +151,10 @@ function CreateEnvironmentModal({ isOpen, onClose, onCreated }: { isOpen: boolea
   const [pods, setPods] = useState('');
   const [costTier, setCostTier] = useState('');
   const [costRate, setCostRate] = useState('');
+  const [hcUrl, setHcUrl] = useState('');
+  const [hcInterval, setHcInterval] = useState('');
+  const [hcTimeout, setHcTimeout] = useState('');
+  const [hcInsecure, setHcInsecure] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -168,8 +177,14 @@ function CreateEnvironmentModal({ isOpen, onClose, onCreated }: { isOpen: boolea
         tier: costTier || 'standard',
         hourlyRate: parseFloat(costRate) || 0,
       } : undefined;
+      const healthCheck: HealthCheck | undefined = hcUrl ? {
+        url: hcUrl,
+        intervalSeconds: parseInt(hcInterval) || undefined,
+        timeoutSeconds: parseInt(hcTimeout) || undefined,
+        insecureSkipVerify: hcInsecure || undefined,
+      } : undefined;
 
-      await environments.create({ name, provider, labels, capabilities, config, resources, cost });
+      await environments.create({ name, provider, labels, capabilities, config, resources, cost, healthCheck });
       setName('');
       setProvider('');
       setLabelsStr('');
@@ -177,6 +192,7 @@ function CreateEnvironmentModal({ isOpen, onClose, onCreated }: { isOpen: boolea
       setConfigStr('{}');
       setCpu(''); setMemory(''); setPods('');
       setCostTier(''); setCostRate('');
+      setHcUrl(''); setHcInterval(''); setHcTimeout(''); setHcInsecure(false);
       onClose();
       onCreated();
     } catch (e: unknown) {
@@ -221,6 +237,22 @@ function CreateEnvironmentModal({ isOpen, onClose, onCreated }: { isOpen: boolea
         <FormGroup label="Hourly rate" fieldId="env-cost-rate" style={{ marginTop: 16 }}>
           <TextInput id="env-cost-rate" type="number" value={costRate} onChange={(_e, v) => setCostRate(v)} placeholder="0.05" />
         </FormGroup>
+        <Content component="h3" style={{ marginTop: 24 }}>Health Check</Content>
+        <FormGroup label="Probe URL" fieldId="env-hc-url" style={{ marginTop: 8 }}>
+          <TextInput id="env-hc-url" value={hcUrl} onChange={(_e, v) => setHcUrl(v)} placeholder="https://cluster:6443/healthz" />
+        </FormGroup>
+        <FormGroup label="Interval (seconds)" fieldId="env-hc-interval" style={{ marginTop: 16 }}>
+          <TextInput id="env-hc-interval" type="number" value={hcInterval} onChange={(_e, v) => setHcInterval(v)} placeholder="30" />
+        </FormGroup>
+        <FormGroup label="Timeout (seconds)" fieldId="env-hc-timeout" style={{ marginTop: 16 }}>
+          <TextInput id="env-hc-timeout" type="number" value={hcTimeout} onChange={(_e, v) => setHcTimeout(v)} placeholder="10" />
+        </FormGroup>
+        <FormGroup fieldId="env-hc-insecure" style={{ marginTop: 16 }}>
+          <label>
+            <input type="checkbox" checked={hcInsecure} onChange={e => setHcInsecure(e.target.checked)} />{' '}
+            Skip TLS verification
+          </label>
+        </FormGroup>
       </ModalBody>
       <ModalFooter>
         <Button onClick={handleSubmit} isLoading={submitting} isDisabled={!name || !provider || submitting}>Create</Button>
@@ -240,6 +272,10 @@ function EditEnvironmentModal({ env, onClose, onSaved }: { env: EnvironmentRecor
   const [pods, setPods] = useState('');
   const [costTier, setCostTier] = useState('');
   const [costRate, setCostRate] = useState('');
+  const [hcUrl, setHcUrl] = useState('');
+  const [hcInterval, setHcInterval] = useState('');
+  const [hcTimeout, setHcTimeout] = useState('');
+  const [hcInsecure, setHcInsecure] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -254,6 +290,10 @@ function EditEnvironmentModal({ env, onClose, onSaved }: { env: EnvironmentRecor
       setPods(env.resources?.pods?.toString() ?? '');
       setCostTier(env.cost?.tier ?? '');
       setCostRate(env.cost?.hourlyRate?.toString() ?? '');
+      setHcUrl(env.healthCheck?.url ?? '');
+      setHcInterval(env.healthCheck?.intervalSeconds?.toString() ?? '');
+      setHcTimeout(env.healthCheck?.timeoutSeconds?.toString() ?? '');
+      setHcInsecure(env.healthCheck?.insecureSkipVerify ?? false);
       setError('');
     }
   }, [env]);
@@ -273,8 +313,14 @@ function EditEnvironmentModal({ env, onClose, onSaved }: { env: EnvironmentRecor
       const cost = costTier || costRate ? {
         tier: costTier || 'standard', hourlyRate: parseFloat(costRate) || 0,
       } : undefined;
+      const healthCheck: HealthCheck | undefined = hcUrl ? {
+        url: hcUrl,
+        intervalSeconds: parseInt(hcInterval) || undefined,
+        timeoutSeconds: parseInt(hcTimeout) || undefined,
+        insecureSkipVerify: hcInsecure || undefined,
+      } : undefined;
 
-      await environments.update(env.name, { provider, labels, capabilities, config, resources, cost });
+      await environments.update(env.name, { provider, labels, capabilities, config, resources, cost, healthCheck });
       onClose();
       onSaved();
     } catch (e: unknown) {
@@ -319,6 +365,22 @@ function EditEnvironmentModal({ env, onClose, onSaved }: { env: EnvironmentRecor
         <FormGroup label="Hourly rate" fieldId="edit-env-cost-rate" style={{ marginTop: 16 }}>
           <TextInput id="edit-env-cost-rate" type="number" value={costRate} onChange={(_e, v) => setCostRate(v)} />
         </FormGroup>
+        <Content component="h3" style={{ marginTop: 24 }}>Health Check</Content>
+        <FormGroup label="Probe URL" fieldId="edit-env-hc-url" style={{ marginTop: 8 }}>
+          <TextInput id="edit-env-hc-url" value={hcUrl} onChange={(_e, v) => setHcUrl(v)} placeholder="https://cluster:6443/healthz" />
+        </FormGroup>
+        <FormGroup label="Interval (seconds)" fieldId="edit-env-hc-interval" style={{ marginTop: 16 }}>
+          <TextInput id="edit-env-hc-interval" type="number" value={hcInterval} onChange={(_e, v) => setHcInterval(v)} placeholder="30" />
+        </FormGroup>
+        <FormGroup label="Timeout (seconds)" fieldId="edit-env-hc-timeout" style={{ marginTop: 16 }}>
+          <TextInput id="edit-env-hc-timeout" type="number" value={hcTimeout} onChange={(_e, v) => setHcTimeout(v)} placeholder="10" />
+        </FormGroup>
+        <FormGroup fieldId="edit-env-hc-insecure" style={{ marginTop: 16 }}>
+          <label>
+            <input type="checkbox" checked={hcInsecure} onChange={e => setHcInsecure(e.target.checked)} />{' '}
+            Skip TLS verification
+          </label>
+        </FormGroup>
       </ModalBody>
       <ModalFooter>
         <Button onClick={handleSubmit} isLoading={submitting} isDisabled={!provider || submitting}>Save</Button>
@@ -326,4 +388,28 @@ function EditEnvironmentModal({ env, onClose, onSaved }: { env: EnvironmentRecor
       </ModalFooter>
     </Modal>
   );
+}
+
+function HealthLabel({ status, message, lastHeartbeat }: { status: string; message?: string; lastHeartbeat?: string }) {
+  const color = status === 'healthy' ? 'green'
+    : status === 'degraded' ? 'orange'
+    : status === 'unhealthy' ? 'red'
+    : 'grey';
+
+  const label = status || 'unknown';
+
+  const tooltip = [
+    message && `Message: ${message}`,
+    lastHeartbeat && `Last heartbeat: ${new Date(lastHeartbeat).toLocaleString()}`,
+  ].filter(Boolean).join('\n');
+
+  if (tooltip) {
+    return (
+      <Tooltip content={tooltip}>
+        <Label isCompact color={color}>{label}</Label>
+      </Tooltip>
+    );
+  }
+
+  return <Label isCompact color={color}>{label}</Label>;
 }

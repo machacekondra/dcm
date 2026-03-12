@@ -489,9 +489,15 @@ func (s *Server) checkCompliance(ctx context.Context, app *types.Application, pl
 // handleComplianceCheck lets users validate a plan against compliance policies without deploying.
 func (s *Server) handleComplianceCheck(w http.ResponseWriter, r *http.Request) {
 	if s.compliance == nil || !s.compliance.HasPolicies() {
+		var req struct {
+			Application string `json:"application"`
+		}
+		decodeJSON(r, &req)
 		writeJSON(w, http.StatusOK, map[string]any{
-			"violations": []any{},
-			"message":    "no compliance policies loaded",
+			"application": req.Application,
+			"violations":  []any{},
+			"passed":      true,
+			"message":     "no compliance policies loaded",
 		})
 		return
 	}
@@ -535,6 +541,9 @@ func (s *Server) handleComplianceCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if violations == nil {
+		violations = []compliance.Violation{}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"application": req.Application,
 		"violations":  violations,

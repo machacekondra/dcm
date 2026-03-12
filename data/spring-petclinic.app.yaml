@@ -2,8 +2,6 @@ apiVersion: dcm.io/v1
 kind: Application
 metadata:
   name: spring-petclinic
-  labels:
-    env: prod
 spec:
   components:
     - name: database

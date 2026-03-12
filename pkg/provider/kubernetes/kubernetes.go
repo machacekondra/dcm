@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dcm-io/dcm/pkg/types"
 	appsv1 "k8s.io/api/apps/v1"
@@ -21,8 +22,9 @@ import (
 // Provider manages container resources on Kubernetes by creating
 // Deployments and Services.
 type Provider struct {
-	client    kubernetes.Interface
-	namespace string
+	client        kubernetes.Interface
+	namespace     string
+	lbWaitTimeout time.Duration // how long to wait for LoadBalancer IP (default: 60s)
 }
 
 // Config holds the configuration for the Kubernetes provider.
@@ -61,7 +63,7 @@ func New(cfg Config) (*Provider, error) {
 		ns = "default"
 	}
 
-	return &Provider{client: client, namespace: ns}, nil
+	return &Provider{client: client, namespace: ns, lbWaitTimeout: 60 * time.Second}, nil
 }
 
 // NewFromClient creates a provider with an existing client (useful for testing).
@@ -69,7 +71,7 @@ func NewFromClient(client kubernetes.Interface, namespace string) *Provider {
 	if namespace == "" {
 		namespace = "default"
 	}
-	return &Provider{client: client, namespace: namespace}
+	return &Provider{client: client, namespace: namespace, lbWaitTimeout: 0}
 }
 
 func (p *Provider) Name() string {
@@ -311,6 +313,27 @@ func (p *Provider) buildOutputs(ctx context.Context, name string, resType types.
 }
 
 func (p *Provider) getLoadBalancerIP(ctx context.Context, name string) string {
+	if p.lbWaitTimeout <= 0 {
+		return p.tryGetLoadBalancerIP(ctx, name)
+	}
+
+	// LoadBalancer IPs take time to provision. Retry until timeout.
+	deadline := time.After(p.lbWaitTimeout)
+	for {
+		if ip := p.tryGetLoadBalancerIP(ctx, name); ip != "" {
+			return ip
+		}
+		select {
+		case <-deadline:
+			return ""
+		case <-ctx.Done():
+			return ""
+		case <-time.After(5 * time.Second):
+		}
+	}
+}
+
+func (p *Provider) tryGetLoadBalancerIP(ctx context.Context, name string) string {
 	svc, err := p.client.CoreV1().Services(p.namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return ""

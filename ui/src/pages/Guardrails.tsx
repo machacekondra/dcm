@@ -94,11 +94,13 @@ export default function Guardrails() {
     setResult(null);
     try {
       const res = await compliance.check(selectedApp);
-      setResult(res);
+      const violations = res.violations ?? [];
+      const normalized = { ...res, violations };
+      setResult(normalized);
       setHistory(prev => [{
         application: selectedApp,
-        passed: res.passed,
-        violations: res.violations,
+        passed: normalized.passed,
+        violations,
         timestamp: new Date().toLocaleString(),
       }, ...prev].slice(0, 20));
     } catch (e: unknown) {

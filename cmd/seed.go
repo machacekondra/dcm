@@ -104,9 +104,6 @@ func seedEnvironment(db *store.Store, path string, data []byte) error {
 	}
 
 	name := env.Metadata.Name
-	if _, err := db.GetEnvironment(name); err == nil {
-		return nil // already exists
-	}
 
 	rec := &store.EnvironmentRecord{
 		Name:         name,
@@ -124,6 +121,19 @@ func seedEnvironment(db *store.Store, path string, data []byte) error {
 	if env.Spec.Cost != nil {
 		j, _ := json.Marshal(env.Spec.Cost)
 		rec.Cost = j
+	}
+	if env.Spec.HealthCheck != nil {
+		j, _ := json.Marshal(env.Spec.HealthCheck)
+		rec.HealthCheck = j
+	}
+
+	if _, err := db.GetEnvironment(name); err == nil {
+		// Already exists — update it from the YAML.
+		if err := db.UpdateEnvironment(rec); err != nil {
+			return err
+		}
+		log.Printf("seed: updated environment %q from %s", name, filepath.Base(path))
+		return nil
 	}
 
 	if err := db.CreateEnvironment(rec); err != nil {

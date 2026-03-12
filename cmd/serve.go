@@ -71,17 +71,20 @@ func buildRegistryFromDB(db *store.Store) (*scheduler.Registry, error) {
 		return nil, fmt.Errorf("listing environments: %w", err)
 	}
 
+	registered := 0
 	for _, rec := range envs {
 		if rec.Status != "active" {
 			continue
 		}
 		env := storeEnvToType(rec)
 		if err := reg.RegisterEnvironment(env); err != nil {
-			return nil, fmt.Errorf("registering environment %q: %w", rec.Name, err)
+			log.Printf("WARNING: skipping environment %q: %v", rec.Name, err)
+			continue
 		}
+		registered++
 	}
 
-	log.Printf("Loaded %d environment(s) from database", len(envs))
+	log.Printf("Loaded %d/%d environment(s) from database", registered, len(envs))
 	return reg, nil
 }
 

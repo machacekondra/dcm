@@ -36,15 +36,15 @@ spec:
         env:
           SPRING_DATASOURCE_URL: "${database.outputs.connectionString}"
 
-    #- name: app-dns
-    #  type: dns
-    #  dependsOn:
-    #    - app
-    #  labels:
-    #    tier: network
-    #  properties:
-    #    zone: example.com
-    #    record: petclinic.example.com
-    #    type: A
-    #    value: "${app.outputs.ip}"
-    #    ttl: 300
+    - name: app-dns
+      type: dns
+      dependsOn:
+        - app
+      labels:
+        tier: network
+      properties:
+        zone: example.ondra
+        record: petclinic.example.ondra
+        type: A
+        value: "${app.outputs.ip}"
+        ttl: 300

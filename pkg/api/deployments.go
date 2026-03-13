@@ -124,7 +124,7 @@ func (s *Server) handleDeleteDeployment(w http.ResponseWriter, r *http.Request) 
 	}
 
 	switch d.Status {
-	case "ready":
+	case "ready", "impacted":
 		// Trigger async resource destruction.
 		go s.runDestroy(d)
 		d.Status = "destroying"
@@ -434,58 +434,82 @@ func generateID() string {
 	return fmt.Sprintf("dep-%d", time.Now().UnixNano())
 }
 
-// rehydrateFromEnvironment finds all ready deployments on the given environment
-// and redeploys them to a healthy environment.
-func (s *Server) rehydrateFromEnvironment(envName string) {
-	deployments, err := s.store.ListReadyDeploymentsByEnvironment(envName)
+// markDeploymentsImpacted finds all ready deployments on the given environment
+// and marks them as "impacted" so the user can manually rehydrate.
+func (s *Server) markDeploymentsImpacted(envName string) {
+	deps, err := s.store.ListReadyDeploymentsByEnvironment(envName)
 	if err != nil {
 		log.Printf("[rehydrate] error listing deployments for env %q: %v", envName, err)
 		return
 	}
 
-	if len(deployments) == 0 {
+	if len(deps) == 0 {
 		log.Printf("[rehydrate] no ready deployments on environment %q", envName)
 		return
 	}
 
-	log.Printf("[rehydrate] found %d deployment(s) on unhealthy environment %q", len(deployments), envName)
+	log.Printf("[rehydrate] marking %d deployment(s) as impacted (env %q unhealthy)", len(deps), envName)
 
-	for _, d := range deployments {
-		s.runRehydrate(&d, envName)
+	for _, d := range deps {
+		claimed, err := s.store.ClaimImpacted(d.ID)
+		if err != nil {
+			log.Printf("[rehydrate] deployment %s: error claiming: %v", d.ID, err)
+			continue
+		}
+		if !claimed {
+			log.Printf("[rehydrate] deployment %s: already impacted or rehydrating, skipping", d.ID)
+			continue
+		}
+
+		s.store.AddHistory(&store.HistoryRecord{
+			DeploymentID: d.ID,
+			Action:       "impacted",
+			Details:      mustJSON(map[string]any{
+				"failedEnvironment": envName,
+				"message":           fmt.Sprintf("environment %q became unhealthy", envName),
+			}),
+		})
+
+		log.Printf("[rehydrate] deployment %s (app=%s): marked impacted", d.ID, d.ApplicationName)
 	}
 }
 
-// runRehydrate destroys resources on the unhealthy environment and redeploys
-// to a healthy one.
-func (s *Server) runRehydrate(d *store.DeploymentRecord, failedEnv string) {
-	// Atomically claim the deployment — prevents duplicate rehydrations when
-	// multiple environments go unhealthy in the same probe cycle.
-	claimed, err := s.store.ClaimForRehydration(d.ID)
+// handleDeploymentRehydrate handles POST /api/v1/deployments/{id}/rehydrate
+// and triggers manual redeployment to a healthy environment.
+func (s *Server) handleDeploymentRehydrate(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	d, err := s.store.GetDeployment(id)
 	if err != nil {
-		log.Printf("[rehydrate] deployment %s: error claiming: %v", d.ID, err)
-		return
-	}
-	if !claimed {
-		log.Printf("[rehydrate] deployment %s: already being rehydrated, skipping", d.ID)
+		handleStoreError(w, err, "deployment")
 		return
 	}
 
-	// Re-read to get the latest state after claiming.
-	d, err = s.store.GetDeployment(d.ID)
-	if err != nil {
-		log.Printf("[rehydrate] deployment %s: error re-reading: %v", d.ID, err)
+	if d.Status != "impacted" {
+		writeError(w, http.StatusConflict,
+			fmt.Sprintf("can only rehydrate an impacted deployment, current status is %q", d.Status))
 		return
 	}
 
-	log.Printf("[rehydrate] rehydrating deployment %s (app=%s) from env %q", d.ID, d.ApplicationName, failedEnv)
+	go s.runRehydrate(d)
 
-	d.Error = ""
+	d.Status = "rehydrating"
 	s.store.UpdateDeployment(d)
-	s.store.AddHistory(&store.HistoryRecord{
-		DeploymentID: d.ID,
-		Action:       "rehydrating",
-		Details:      mustJSON(map[string]any{"failedEnvironment": failedEnv}),
-	})
+	s.store.AddHistory(&store.HistoryRecord{DeploymentID: id, Action: "rehydrating"})
+
+	writeJSON(w, http.StatusAccepted, d)
+}
+
+// runRehydrate destroys resources on the old environment and redeploys
+// to a healthy one.
+func (s *Server) runRehydrate(d *store.DeploymentRecord) {
+	// Re-read to get the latest state.
+	d, err := s.store.GetDeployment(d.ID)
+	if err != nil {
+		log.Printf("[rehydrate] deployment %s: error reading: %v", d.ID, err)
+		return
+	}
+
+	log.Printf("[rehydrate] rehydrating deployment %s (app=%s)", d.ID, d.ApplicationName)
 
 	// Phase 1: Destroy old resources.
 	var state types.State
@@ -511,10 +535,9 @@ func (s *Server) runRehydrate(d *store.DeploymentRecord, failedEnv string) {
 	s.store.AddHistory(&store.HistoryRecord{
 		DeploymentID: d.ID,
 		Action:       "destroyed_for_rehydration",
-		Details:      mustJSON(map[string]any{"failedEnvironment": failedEnv}),
 	})
 
-	// Phase 2: Re-plan and re-deploy (state is cleared so scheduler picks a new env).
+	// Phase 2: Re-plan (state is cleared so scheduler picks a new env).
 	appRec, err := s.store.GetApplication(d.ApplicationName)
 	if err != nil {
 		s.failDeployment(d, fmt.Sprintf("rehydration failed: application %q not found: %v", d.ApplicationName, err))
@@ -523,7 +546,6 @@ func (s *Server) runRehydrate(d *store.DeploymentRecord, failedEnv string) {
 
 	app := recordToApplication(appRec)
 
-	// Clear state so the planner treats everything as new.
 	d.State = nil
 	d.Status = "planning"
 	s.store.UpdateDeployment(d)
@@ -563,10 +585,7 @@ func (s *Server) runRehydrate(d *store.DeploymentRecord, failedEnv string) {
 	s.store.AddHistory(&store.HistoryRecord{
 		DeploymentID: d.ID,
 		Action:       "rehydrated",
-		Details:      mustJSON(map[string]any{
-			"fromEnvironment": failedEnv,
-			"state":           json.RawMessage(stateJSON),
-		}),
+		Details:      stateJSON,
 	})
 
 	log.Printf("[rehydrate] deployment %s: rehydration complete", d.ID)

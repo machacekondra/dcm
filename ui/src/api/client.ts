@@ -199,6 +199,7 @@ export const deployments = {
   plan: (id: string) => request<Plan>(`/deployments/${id}/plan`, { method: 'POST' }),
   apply: (id: string) => request<DeploymentRecord>(`/deployments/${id}/apply`, { method: 'POST' }),
   history: (id: string) => request<HistoryRecord[]>(`/deployments/${id}/history`),
+  rehydrate: (id: string) => request<DeploymentRecord>(`/deployments/${id}/rehydrate`, { method: 'POST' }),
 };
 
 // --- Environments ---

@@ -602,12 +602,12 @@ func (s *Store) ListReadyDeploymentsByEnvironment(envName string) ([]DeploymentR
 	return deployments, rows.Err()
 }
 
-// ClaimForRehydration atomically transitions a deployment from "ready" to "rehydrating".
-// Returns true if this caller successfully claimed it, false if another goroutine already did.
-func (s *Store) ClaimForRehydration(id string) (bool, error) {
+// ClaimImpacted atomically transitions a deployment from "ready" to "impacted".
+// Returns true if this caller successfully claimed it, false if it was already impacted/rehydrating.
+func (s *Store) ClaimImpacted(id string) (bool, error) {
 	now := time.Now().UTC()
 	res, err := s.db.Exec(
-		`UPDATE deployments SET status = 'rehydrating', updated_at = ? WHERE id = ? AND status = 'ready'`,
+		`UPDATE deployments SET status = 'impacted', updated_at = ? WHERE id = ? AND status = 'ready'`,
 		now.Format(time.RFC3339), id,
 	)
 	if err != nil {

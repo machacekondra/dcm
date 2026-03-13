@@ -86,6 +86,16 @@ export default function DeploymentDetail() {
     }
   };
 
+  const handleRehydrate = async () => {
+    if (!id || !confirm('Rehydrate this deployment? Resources will be destroyed and redeployed to a healthy environment.')) return;
+    try {
+      await deployments.rehydrate(id);
+      load();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   if (error && !dep) return <PageSection><Alert variant="danger" title={error} /></PageSection>;
   if (!dep) return <PageSection><Spinner /></PageSection>;
 
@@ -114,7 +124,10 @@ export default function DeploymentDetail() {
               {dep.status === 'planned' && (
                 <FlexItem><Button variant="primary" onClick={handleApply}>Apply</Button></FlexItem>
               )}
-              {dep.status === 'ready' && (
+              {dep.status === 'impacted' && (
+                <FlexItem><Button variant="warning" onClick={handleRehydrate}>Rehydrate</Button></FlexItem>
+              )}
+              {(dep.status === 'ready' || dep.status === 'impacted') && (
                 <FlexItem><Button variant="danger" onClick={handleDestroy}>Destroy</Button></FlexItem>
               )}
               {(dep.status === 'planned' || dep.status === 'destroyed' || dep.status === 'failed') && (
@@ -125,6 +138,11 @@ export default function DeploymentDetail() {
         </Flex>
       </PageSection>
       <PageSection>
+      {dep.status === 'impacted' && (
+        <Alert variant="warning" title="Deployment impacted" isInline style={{ marginBottom: 16 }}>
+          The environment hosting this deployment became unhealthy. Click <strong>Rehydrate</strong> to redeploy to a healthy environment.
+        </Alert>
+      )}
       {dep.error && <Alert variant="danger" title="Deployment failed" isInline style={{ marginBottom: 16 }}>{dep.error}</Alert>}
       {error && <Alert variant="warning" title={error} isInline style={{ marginBottom: 16 }} />}
 
@@ -270,7 +288,7 @@ export default function DeploymentDetail() {
                             isCompact
                             color={
                               h.action === 'applied' || h.action === 'destroyed' || h.action === 'rehydrated' ? 'green'
-                                : h.action === 'failed' || h.action === 'compliance_failed' ? 'red'
+                                : h.action === 'failed' || h.action === 'compliance_failed' || h.action === 'impacted' ? 'red'
                                 : h.action === 'planning' || h.action === 'destroying' || h.action === 'rehydrating' ? 'orange'
                                 : 'blue'
                             }

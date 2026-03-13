@@ -14,6 +14,7 @@ const statusConfig: Record<string, { color: 'green' | 'red' | 'blue' | 'orange' 
   planning: { color: 'blue', icon: InProgressIcon },
   pending: { color: 'grey', icon: PendingIcon },
   planned: { color: 'cyan', icon: CheckCircleIcon },
+  impacted: { color: 'red', icon: ExclamationCircleIcon },
   rehydrating: { color: 'orange', icon: InProgressIcon },
   destroying: { color: 'orange', icon: InProgressIcon },
   destroyed: { color: 'grey', icon: TrashIcon },

@@ -63,6 +63,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/deployments/{id}/plan", s.handleDeploymentPlan)
 	s.mux.HandleFunc("POST /api/v1/deployments/{id}/apply", s.handleDeploymentApply)
 	s.mux.HandleFunc("GET /api/v1/deployments/{id}/history", s.handleDeploymentHistory)
+	s.mux.HandleFunc("POST /api/v1/deployments/{id}/rehydrate", s.handleDeploymentRehydrate)
 
 	// Providers & Types
 	s.mux.HandleFunc("GET /api/v1/providers", s.handleListProviders)
@@ -170,10 +171,10 @@ func (s *Server) probeAllEnvironments(defaultTimeout time.Duration) {
 			log.Printf("[health] %s: %s — %s", env.Name, status, message)
 		}
 
-		// Trigger rehydration when an environment transitions to unhealthy.
+		// Mark affected deployments when an environment transitions to unhealthy.
 		if status == "unhealthy" && previousStatus != "unhealthy" {
-			log.Printf("[health] %s: environment became unhealthy, triggering rehydration", env.Name)
-			go s.rehydrateFromEnvironment(env.Name)
+			log.Printf("[health] %s: environment became unhealthy, marking affected deployments", env.Name)
+			go s.markDeploymentsImpacted(env.Name)
 		}
 	}
 }

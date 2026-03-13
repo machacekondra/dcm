@@ -59,7 +59,7 @@ export default function Deployments() {
 
   // Auto-refresh if any deployment is in progress.
   useEffect(() => {
-    const hasActive = list.some(d => ['pending', 'planning', 'deploying', 'destroying', 'rehydrating'].includes(d.status));
+    const hasActive = list.some(d => ['pending', 'planning', 'deploying', 'destroying', 'rehydrating', 'impacted'].includes(d.status));
     if (!hasActive) return;
     const id = setInterval(load, 3000);
     return () => clearInterval(id);

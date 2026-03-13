@@ -104,16 +104,17 @@ func (r *Registry) ListProviders() []types.Provider {
 	return providers
 }
 
-// ListEnvironments returns all registered environment instances.
+// ListEnvironments returns all registered environment instances sorted by name.
 func (r *Registry) ListEnvironments() []*EnvironmentInstance {
 	envs := make([]*EnvironmentInstance, 0, len(r.environments))
 	for _, e := range r.environments {
 		envs = append(envs, e)
 	}
+	sortByName(envs)
 	return envs
 }
 
-// ListByProvider returns environments backed by the given provider type.
+// ListByProvider returns environments backed by the given provider type, sorted by name.
 func (r *Registry) ListByProvider(providerType string) []*EnvironmentInstance {
 	var result []*EnvironmentInstance
 	for _, e := range r.environments {
@@ -121,10 +122,11 @@ func (r *Registry) ListByProvider(providerType string) []*EnvironmentInstance {
 			result = append(result, e)
 		}
 	}
+	sortByName(result)
 	return result
 }
 
-// ListByCapability returns environments whose provider supports the given resource type.
+// ListByCapability returns environments whose provider supports the given resource type, sorted by name.
 func (r *Registry) ListByCapability(rt types.ResourceType) []*EnvironmentInstance {
 	var result []*EnvironmentInstance
 	for _, e := range r.environments {
@@ -132,7 +134,20 @@ func (r *Registry) ListByCapability(rt types.ResourceType) []*EnvironmentInstanc
 			result = append(result, e)
 		}
 	}
+	sortByName(result)
 	return result
+}
+
+func sortByName(envs []*EnvironmentInstance) {
+	slices.SortFunc(envs, func(a, b *EnvironmentInstance) int {
+		if a.Env.Metadata.Name < b.Env.Metadata.Name {
+			return -1
+		}
+		if a.Env.Metadata.Name > b.Env.Metadata.Name {
+			return 1
+		}
+		return 0
+	})
 }
 
 // UpdateHealthStatus updates the health status of a registered environment.

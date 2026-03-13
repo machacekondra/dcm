@@ -158,6 +158,8 @@ func (s *Server) probeAllEnvironments(defaultTimeout time.Duration) {
 			continue
 		}
 
+		previousStatus := env.HealthStatus
+
 		if err := s.store.UpdateHealthStatus(env.Name, status, message); err != nil {
 			log.Printf("[health] %s: error updating status: %v", env.Name, err)
 			continue
@@ -166,6 +168,12 @@ func (s *Server) probeAllEnvironments(defaultTimeout time.Duration) {
 
 		if status != "healthy" {
 			log.Printf("[health] %s: %s — %s", env.Name, status, message)
+		}
+
+		// Trigger rehydration when an environment transitions to unhealthy.
+		if status == "unhealthy" && previousStatus != "unhealthy" {
+			log.Printf("[health] %s: environment became unhealthy, triggering rehydration", env.Name)
+			go s.rehydrateFromEnvironment(env.Name)
 		}
 	}
 }

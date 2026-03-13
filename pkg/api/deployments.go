@@ -434,6 +434,144 @@ func generateID() string {
 	return fmt.Sprintf("dep-%d", time.Now().UnixNano())
 }
 
+// rehydrateFromEnvironment finds all ready deployments on the given environment
+// and redeploys them to a healthy environment.
+func (s *Server) rehydrateFromEnvironment(envName string) {
+	deployments, err := s.store.ListReadyDeploymentsByEnvironment(envName)
+	if err != nil {
+		log.Printf("[rehydrate] error listing deployments for env %q: %v", envName, err)
+		return
+	}
+
+	if len(deployments) == 0 {
+		log.Printf("[rehydrate] no ready deployments on environment %q", envName)
+		return
+	}
+
+	log.Printf("[rehydrate] found %d deployment(s) on unhealthy environment %q", len(deployments), envName)
+
+	for _, d := range deployments {
+		s.runRehydrate(&d, envName)
+	}
+}
+
+// runRehydrate destroys resources on the unhealthy environment and redeploys
+// to a healthy one.
+func (s *Server) runRehydrate(d *store.DeploymentRecord, failedEnv string) {
+	// Atomically claim the deployment — prevents duplicate rehydrations when
+	// multiple environments go unhealthy in the same probe cycle.
+	claimed, err := s.store.ClaimForRehydration(d.ID)
+	if err != nil {
+		log.Printf("[rehydrate] deployment %s: error claiming: %v", d.ID, err)
+		return
+	}
+	if !claimed {
+		log.Printf("[rehydrate] deployment %s: already being rehydrated, skipping", d.ID)
+		return
+	}
+
+	// Re-read to get the latest state after claiming.
+	d, err = s.store.GetDeployment(d.ID)
+	if err != nil {
+		log.Printf("[rehydrate] deployment %s: error re-reading: %v", d.ID, err)
+		return
+	}
+
+	log.Printf("[rehydrate] rehydrating deployment %s (app=%s) from env %q", d.ID, d.ApplicationName, failedEnv)
+
+	d.Error = ""
+	s.store.UpdateDeployment(d)
+	s.store.AddHistory(&store.HistoryRecord{
+		DeploymentID: d.ID,
+		Action:       "rehydrating",
+		Details:      mustJSON(map[string]any{"failedEnvironment": failedEnv}),
+	})
+
+	// Phase 1: Destroy old resources.
+	var state types.State
+	if d.State != nil {
+		json.Unmarshal(d.State, &state)
+	}
+
+	for name, resource := range state.Resources {
+		lookupName := resource.Provider
+		if resource.Environment != "" {
+			lookupName = resource.Environment
+		}
+		provider, ok := s.registry.Get(lookupName)
+		if !ok {
+			log.Printf("[rehydrate] deployment %s: provider %q not found for resource %q, skipping destroy", d.ID, lookupName, name)
+			continue
+		}
+		if err := provider.Destroy(resource); err != nil {
+			log.Printf("[rehydrate] deployment %s: error destroying %q: %v (continuing)", d.ID, name, err)
+		}
+	}
+
+	s.store.AddHistory(&store.HistoryRecord{
+		DeploymentID: d.ID,
+		Action:       "destroyed_for_rehydration",
+		Details:      mustJSON(map[string]any{"failedEnvironment": failedEnv}),
+	})
+
+	// Phase 2: Re-plan and re-deploy (state is cleared so scheduler picks a new env).
+	appRec, err := s.store.GetApplication(d.ApplicationName)
+	if err != nil {
+		s.failDeployment(d, fmt.Sprintf("rehydration failed: application %q not found: %v", d.ApplicationName, err))
+		return
+	}
+
+	app := recordToApplication(appRec)
+
+	// Clear state so the planner treats everything as new.
+	d.State = nil
+	d.Status = "planning"
+	s.store.UpdateDeployment(d)
+
+	plan, err := s.computePlan(app, d)
+	if err != nil {
+		s.failDeployment(d, "rehydration planning failed: "+err.Error())
+		return
+	}
+
+	planJSON, _ := json.Marshal(plan)
+	d.Plan = planJSON
+	s.store.AddHistory(&store.HistoryRecord{
+		DeploymentID: d.ID,
+		Action:       "rehydration_planned",
+		Details:      planJSON,
+	})
+
+	// Phase 3: Apply.
+	d.Status = "deploying"
+	s.store.UpdateDeployment(d)
+
+	newState := types.NewState(app.Metadata.Name)
+	executor := engine.NewExecutor(s.registry)
+	if err := executor.Execute(plan, newState); err != nil {
+		stateJSON, _ := json.Marshal(newState)
+		d.State = stateJSON
+		s.failDeployment(d, "rehydration apply failed: "+err.Error())
+		return
+	}
+
+	stateJSON, _ := json.Marshal(newState)
+	d.State = stateJSON
+	d.Status = "ready"
+	s.store.UpdateDeployment(d)
+
+	s.store.AddHistory(&store.HistoryRecord{
+		DeploymentID: d.ID,
+		Action:       "rehydrated",
+		Details:      mustJSON(map[string]any{
+			"fromEnvironment": failedEnv,
+			"state":           json.RawMessage(stateJSON),
+		}),
+	})
+
+	log.Printf("[rehydrate] deployment %s: rehydration complete", d.ID)
+}
+
 // checkCompliance builds OPA inputs from the plan and evaluates them.
 func (s *Server) checkCompliance(ctx context.Context, app *types.Application, plan *engine.Plan) ([]compliance.Violation, error) {
 	componentMap := make(map[string]*types.Component)

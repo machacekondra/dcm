@@ -27,7 +27,7 @@ import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
 import { deployments, type DeploymentRecord, type HistoryRecord } from '../api/client';
 import StatusLabel from '../components/StatusLabel';
 
-const ACTIVE_STATUSES = ['pending', 'planning', 'deploying', 'destroying'];
+const ACTIVE_STATUSES = ['pending', 'planning', 'deploying', 'destroying', 'rehydrating'];
 
 export default function DeploymentDetail() {
   const { id } = useParams<{ id: string }>();
@@ -269,9 +269,9 @@ export default function DeploymentDetail() {
                           <Label
                             isCompact
                             color={
-                              h.action === 'applied' || h.action === 'destroyed' ? 'green'
+                              h.action === 'applied' || h.action === 'destroyed' || h.action === 'rehydrated' ? 'green'
                                 : h.action === 'failed' || h.action === 'compliance_failed' ? 'red'
-                                : h.action === 'planning' || h.action === 'destroying' ? 'orange'
+                                : h.action === 'planning' || h.action === 'destroying' || h.action === 'rehydrating' ? 'orange'
                                 : 'blue'
                             }
                           >

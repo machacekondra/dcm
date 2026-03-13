@@ -576,6 +576,47 @@ func (s *Store) UpdateHealthStatus(name, healthStatus, healthMessage string) err
 }
 
 
+// ListReadyDeploymentsByEnvironment returns all deployments in "ready" status
+// whose state JSON contains resources deployed to the given environment.
+func (s *Store) ListReadyDeploymentsByEnvironment(envName string) ([]DeploymentRecord, error) {
+	// The state JSON contains resources with "environment":"envName" fields.
+	// Use a LIKE query to find deployments whose state references this environment.
+	pattern := fmt.Sprintf("%%\"environment\":\"%s\"%%", envName)
+	rows, err := s.db.Query(
+		`SELECT id, application_name, status, plan, state, error, policies, created_at, updated_at
+		 FROM deployments WHERE status = 'ready' AND state LIKE ?`, pattern,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var deployments []DeploymentRecord
+	for rows.Next() {
+		d, err := scanDeploymentRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		deployments = append(deployments, *d)
+	}
+	return deployments, rows.Err()
+}
+
+// ClaimForRehydration atomically transitions a deployment from "ready" to "rehydrating".
+// Returns true if this caller successfully claimed it, false if another goroutine already did.
+func (s *Store) ClaimForRehydration(id string) (bool, error) {
+	now := time.Now().UTC()
+	res, err := s.db.Exec(
+		`UPDATE deployments SET status = 'rehydrating', updated_at = ? WHERE id = ? AND status = 'ready'`,
+		now.Format(time.RFC3339), id,
+	)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
 // --- Errors ---
 
 var ErrNotFound = fmt.Errorf("not found")
